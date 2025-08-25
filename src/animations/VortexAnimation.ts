@@ -58,6 +58,11 @@ export class VortexAnimation extends BaseAnimate {
         const centerX = this.mesh.width / 2;
         const centerY = this.mesh.height / 2;
 
+        // Maximum possible radius (distance from center to corner) used to normalize radii
+        const maxRadius = Math.sqrt(centerX * centerX + centerY * centerY);
+        // Controls how much faster inner vertices move. Range [0,1). Larger -> inner vertices accelerate more.
+        const innerAcceleration = 0.8;
+
         for (let i = 0; i < totalVertices; i++) {
             const ox = this.originalVertices[i * 2];
             const oy = this.originalVertices[i * 2 + 1];
@@ -68,9 +73,21 @@ export class VortexAnimation extends BaseAnimate {
             const originalRadius = Math.sqrt(dx * dx + dy * dy);
             const originalAngle = Math.atan2(dy, dx);
 
-            const newRadius = originalRadius * (1 - progress);
-            // Subtract to make the rotation clockwise
-            const newAngle = originalAngle - progress * this.spirals * Math.PI * 2;
+            // Normalized radius in [0,1] (0 at center, 1 at far corner)
+            const rNorm = maxRadius > 0 ? originalRadius / maxRadius : 0;
+
+            // Make inner vertices move faster by using a progress exponent < 1 for inner points.
+            // Exponent varies from (1 - innerAcceleration) for rNorm=0 up to 1 for rNorm=1.
+            const exponent = Math.max(0.05, 1 - innerAcceleration * (1 - rNorm));
+            const radialProgress = Math.pow(progress, exponent);
+
+            // Radius shrinks to 0 at progress = 1. inner vertices (small rNorm) get larger radialProgress => move faster.
+            const newRadius = originalRadius * (1 - radialProgress);
+
+            // Rotation amount scales with normalized radius so outer-most vertices complete `spirals` turns,
+            // while inner vertices rotate less. Subtract for clockwise rotation.
+            const rotationAmount = progress * this.spirals * Math.PI * 2 * rNorm;
+            const newAngle = originalAngle - rotationAmount;
 
             vertices[i * 2] = centerX + newRadius * Math.cos(newAngle);
             vertices[i * 2 + 1] = centerY + newRadius * Math.sin(newAngle);
