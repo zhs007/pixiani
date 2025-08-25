@@ -5,6 +5,7 @@ import {
     ScaleAnimation,
     FadeAnimation,
     ComplexPopAnimation,
+    FlagWaveAnimation,
     AnimateClass,
     IAnimate
 } from 'pixi-animation-library';
@@ -127,7 +128,7 @@ async function init() {
     canvasContainer.appendChild(app.canvas);
 
     // 2. Register animations
-    [ScaleAnimation, FadeAnimation, ComplexPopAnimation].forEach(animClass => {
+    [ScaleAnimation, FadeAnimation, ComplexPopAnimation, FlagWaveAnimation].forEach(animClass => {
         registeredAnimations.set(animClass.animationName, animClass);
         const option = document.createElement('option');
         option.value = animClass.animationName;
