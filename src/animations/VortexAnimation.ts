@@ -20,8 +20,8 @@ export class VortexAnimation extends BaseAnimate {
 
     // Animation parameters
     private readonly DURATION: number = 3.0; // Total duration in seconds
-    private readonly segments = { width: 20, height: 20 };
-    private readonly spirals: number = 3; // How many times the image will spiral
+    private readonly segments = { width: 10, height: 10 }; // Results in an 11x11 grid of points
+    private readonly spirals: number = 2; // How many times the image will spiral
     private elapsedTime: number = 0;
 
     constructor(object: any, sprites: PIXI.Sprite[]) {
@@ -69,7 +69,8 @@ export class VortexAnimation extends BaseAnimate {
             const originalAngle = Math.atan2(dy, dx);
 
             const newRadius = originalRadius * (1 - progress);
-            const newAngle = originalAngle + progress * this.spirals * Math.PI * 2;
+            // Subtract to make the rotation clockwise
+            const newAngle = originalAngle - progress * this.spirals * Math.PI * 2;
 
             vertices[i * 2] = centerX + newRadius * Math.cos(newAngle);
             vertices[i * 2 + 1] = centerY + newRadius * Math.sin(newAngle);

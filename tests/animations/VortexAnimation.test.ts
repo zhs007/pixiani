@@ -8,7 +8,8 @@ vi.mock('pixi.js', async () => {
     const actual = await vi.importActual('pixi.js');
 
     const buffer = {
-        data: new Float32Array(Array.from({ length: 441 * 2 }, (_, i) => (i % 2 === 0 ? (i / 2) % 21 * 10 : Math.floor(i / 42) * 10))),
+        // 11x11 grid = 121 points * 2 coordinates/point = 242
+        data: new Float32Array(Array.from({ length: 121 * 2 }, (_, i) => (i % 2 === 0 ? (i / 2) % 11 * 10 : Math.floor(i / 22) * 10))),
         update: vi.fn(),
     };
 
