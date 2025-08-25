@@ -16,3 +16,4 @@ export { ScaleAnimation } from './animations/ScaleAnimation';
 export { FadeAnimation } from './animations/FadeAnimation';
 export { ComplexPopAnimation } from './animations/ComplexPopAnimation';
 export { FlagWaveAnimation } from './animations/FlagWaveAnimation';
+export { VortexAnimation } from './animations/VortexAnimation';
