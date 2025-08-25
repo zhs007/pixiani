@@ -29,7 +29,9 @@ const registeredAnimations: Map<string, AnimateClass> = new Map();
  * Uses Vite's `import.meta.glob` to find all images in the assets directory.
  */
 function getAvailableSprites(): Record<string, { default: string }> {
-    return import.meta.glob('/sprite/*.{png,jpg,jpeg,svg}', { eager: true });
+    // The path must be relative to the current file (main.ts) for import.meta.glob.
+    // Since the vite root is 'demo', we need to go up one level to find the assets folder.
+    return import.meta.glob('../assets/sprite/*.{png,jpg,jpeg,svg}', { eager: true });
 }
 
 /**
