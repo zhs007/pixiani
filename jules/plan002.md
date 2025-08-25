@@ -1,0 +1,23 @@
+# 任务 2: 核心模块设计与实现
+
+- **目标:** 实现动画库的核心基础模块。
+- **具体任务:**
+  - 在 `src/` 目录下创建 `core` 子目录。
+  - 创建 `src/core/types.ts` 文件，定义所有核心类型和接口，例如 `IAnimate`, `IAnimationManager`, `ISpriteSlot` 等。
+  - 创建 `src/core/BaseAnimate.ts`，实现动画基类。它应包含：
+    - 构造函数，接收 `BaseObject` 和 Sprite 插槽。
+    - `update(deltaTime: number)` 方法。
+    - `play()`, `pause()`, `stop()` 等控制方法。
+    - `onComplete` 回调。
+    - 获取所需 Sprite 数量的抽象方法。
+  - 创建 `src/core/AnimationManager.ts`，实现动画管理器。它应包含：
+    - `register(animate: IAnimate)` 方法。
+    - `create(name: string, object: BaseObject, sprites: PIXI.Sprite[]): IAnimate` 方法。
+    - 全局的 `pauseAll()`, `resumeAll()` 方法。
+    - 全局速度控制 `setSpeed(speed: number)`。
+    - `update(deltaTime: number)` 方法，用于更新所有动画。
+  - 创建 `src/core/BaseObject.ts`，实现附加动画的游戏对象。它应包含：
+    - `addAnimate(animate: IAnimate)` 方法。
+    - `removeAnimate(animate: IAnimate)` 方法。
+    - `update(deltaTime: number)` 方法，用于更新附加在自身的所有动画。
+    - 记录自身在游戏世界中的位置、缩放、旋转等属性。

@@ -1,0 +1,2 @@
+This is a placeholder file for a sprite image.
+Please replace it with actual images (e.g., .png, .jpg).
