@@ -3,6 +3,7 @@ import {
     AnimationManager,
     BaseObject,
     ScaleAnimation,
+    FadeAnimation,
     AnimateClass,
     IAnimate
 } from 'pixi-animation-library';
@@ -125,7 +126,7 @@ async function init() {
     canvasContainer.appendChild(app.canvas);
 
     // 2. Register animations
-    [ScaleAnimation].forEach(animClass => {
+    [ScaleAnimation, FadeAnimation].forEach(animClass => {
         registeredAnimations.set(animClass.animationName, animClass);
         const option = document.createElement('option');
         option.value = animClass.animationName;
