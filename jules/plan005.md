@@ -1,0 +1,23 @@
+# 任务 5: 演示页面开发
+
+- **目标:** 创建一个交互式页面来展示和测试动画库。
+- **具体任务:**
+  - 创建 `demo/index.html`，包含一个 canvas 用于 Pixi 渲染，以及 UI 元素的容器。
+  - 创建 `demo/main.ts`，作为演示页面的主入口脚本。
+  - 在 `main.ts` 中：
+    - 初始化 Pixi Application。
+    - 实例化 `AnimationManager` 并注册 `ScaleAnimation`。
+    - 动态生成动画选择下拉框，并填充已注册的动画名称。
+    - 监听动画选择框的 `change` 事件。当选择一个动画时：
+      - 根据动画所需的 Sprite 数量，动态创建相应数量的 `<select>` 元素作为 Sprite 插槽。
+      - 异步加载 `assets/sprite/` 目录下的所有图片文件名，并填充到每个 Sprite 插槽选择框中。
+    - 创建一个速度控制的 `<input type="number">` 元素，默认值为 1.0。
+    - 创建一个 "播放" 按钮。
+    - 当点击 "播放" 按钮时：
+      - 获取所有选择框的值（动画名称、Sprite 资源）。
+      - 在 Pixi 场景中央创建一个 `BaseObject`。
+      - 加载所选的 Sprite 纹理并创建 `PIXI.Sprite` 对象。
+      - 使用 `AnimationManager` 创建动画实例，并附加到 `BaseObject` 上。
+      - 将 `BaseObject` 添加到 Pixi 的 stage 中。
+      - 启动 Pixi 的 `Ticker`，在每一帧调用 `AnimationManager` 的 `update` 方法。
+    - 监听速度输入框的变化，并调用 `AnimationManager.setSpeed()`。
