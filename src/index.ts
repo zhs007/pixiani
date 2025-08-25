@@ -14,3 +14,4 @@ export { BaseAnimate } from './core/BaseAnimate';
 // Available animations
 export { ScaleAnimation } from './animations/ScaleAnimation';
 export { FadeAnimation } from './animations/FadeAnimation';
+export { ComplexPopAnimation } from './animations/ComplexPopAnimation';
