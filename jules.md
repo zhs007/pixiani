@@ -61,5 +61,6 @@
 ### 如何运行
 1.  在项目根目录创建一个 `.env` 文件。
 2.  在 `.env` 文件中添加您的 Gemini API 密钥: `GEMINI_API_KEY=your_api_key_here`
-3.  运行编辑器的开发服务器: `npm run dev:editor`
-4.  在浏览器中打开 `http://localhost:3000`。
+3.  (可选) 您也可以指定要使用的模型: `GEMINI_MODEL=gemini-1.5-pro` (默认为 `gemini-1.5-flash`)
+4.  运行编辑器的开发服务器: `npm run dev:editor`
+5.  在浏览器中打开 `http://localhost:3000`。

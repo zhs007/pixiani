@@ -18,13 +18,15 @@ const sessions = new Map<string, any[]>();
 
 // --- Gemini AI Configuration ---
 const API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
+
 if (!API_KEY) {
   console.error("FATAL: GEMINI_API_KEY environment variable is not set.");
   process.exit(1);
 }
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({
-  model: "gemini-1.5-flash",
+  model: GEMINI_MODEL,
   // The system instruction is the core prompt for the AI
   systemInstruction: `You are an expert TypeScript developer specializing in Pixi.js animations. Your task is to create a new animation class based on a user's description. The class MUST adhere to the following rules:
 1. It MUST be a single TypeScript class definition, with necessary imports from 'pixi.js' and '../core/BaseAnimate'.
