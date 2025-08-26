@@ -28,6 +28,10 @@ const App = () => {
   const [animationManager] = useState(() => new AnimationManager());
   const [availableAnimations, setAvailableAnimations] = useState<AnimateClass[]>(standardAnimations);
   const [selectedAnimationName, setSelectedAnimationName] = useState<string>(standardAnimations[0].animationName);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = React.useRef<number | null>(null);
+  const hasLoadedCustomOnceRef = React.useRef(false);
+  const lastCustomNamesRef = React.useRef<Set<string>>(new Set());
 
   const pixiAppRef = useRef<PIXI.Application | null>(null);
   const pixiContainerRef = useRef<HTMLDivElement>(null);
@@ -43,24 +47,62 @@ const App = () => {
     setSessionId(sid);
   }, []);
 
+  // Restore chat messages for this session from localStorage
+  useEffect(() => {
+    if (!sessionId) return;
+    try {
+      const saved = localStorage.getItem(`chat:${sessionId}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) setMessages(parsed);
+      }
+    } catch (e) {
+      console.warn('Failed to restore chat history:', e);
+    }
+  }, [sessionId]);
+
+  // Persist chat messages for this session
+  useEffect(() => {
+    if (!sessionId) return;
+    try {
+      localStorage.setItem(`chat:${sessionId}`, JSON.stringify(messages));
+    } catch (e) {
+      console.warn('Failed to persist chat history:', e);
+    }
+  }, [messages, sessionId]);
+
   // --- Animation Loading ---
   const loadCustomAnimations = useCallback(async () => {
     if (!sessionId) return;
     try {
       const res = await fetch(`/api/animations/${sessionId}`);
-      const customAnimNames: string[] = await res.json();
+      const list: { name: string; fsPath: string }[] = await res.json();
 
       const customAnimModules = await Promise.all(
-        customAnimNames.map(name =>
-          import(/* @vite-ignore */ `/editor/sessions/${sessionId}/animations/${name}.ts`)
-        )
+        list.map(item => import(/* @vite-ignore */ `/@fs/${item.fsPath}`))
       );
 
-      const customAnimClasses = customAnimModules.map(mod => mod[Object.keys(mod)[0]] as AnimateClass);
+      const customAnimClasses = customAnimModules
+        .map(mod => mod[Object.keys(mod)[0]] as AnimateClass)
+        .filter(Boolean);
 
       const allAnims = [...standardAnimations, ...customAnimClasses];
       allAnims.forEach(anim => animationManager.register(anim));
-      setAvailableAnimations(allAnims);
+  setAvailableAnimations(allAnims);
+
+      // Detect newly added custom animations to show a toast
+      const currentNames = new Set(list.map(i => i.name));
+      if (hasLoadedCustomOnceRef.current) {
+        let newCount = 0;
+        currentNames.forEach(n => { if (!lastCustomNamesRef.current.has(n)) newCount++; });
+        if (newCount > 0) {
+          setToast(`已加载 ${newCount} 个新动画`);
+          if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+          toastTimerRef.current = window.setTimeout(() => setToast(null), 2500);
+        }
+      }
+      lastCustomNamesRef.current = currentNames;
+      hasLoadedCustomOnceRef.current = true;
 
     } catch (error) {
       console.error("Failed to load custom animations:", error);
@@ -70,6 +112,21 @@ const App = () => {
   useEffect(() => {
     loadCustomAnimations();
   }, [loadCustomAnimations]);
+
+  // Restore selected animation for this session
+  useEffect(() => {
+    if (!sessionId) return;
+    const key = `selectedAnim:${sessionId}`;
+    const saved = localStorage.getItem(key);
+    if (saved) setSelectedAnimationName(saved);
+  }, [sessionId]);
+
+  // Persist selected animation for this session
+  useEffect(() => {
+    if (!sessionId) return;
+    const key = `selectedAnim:${sessionId}`;
+    try { localStorage.setItem(key, selectedAnimationName); } catch {}
+  }, [selectedAnimationName, sessionId]);
 
   // --- Pixi.js Setup ---
   useEffect(() => {
@@ -123,8 +180,13 @@ const App = () => {
       body: JSON.stringify({ sessionId }),
     });
     setMessages([]);
+  try { localStorage.removeItem(`chat:${sessionId}`); } catch {}
+    try { localStorage.removeItem(`selectedAnim:${sessionId}`); } catch {}
     // This could also clear the generated files from the server
     setAvailableAnimations(standardAnimations);
+    setSelectedAnimationName(standardAnimations[0].animationName);
+    lastCustomNamesRef.current = new Set();
+    hasLoadedCustomOnceRef.current = false;
   };
 
   const handlePlayAnimation = async () => {
@@ -189,6 +251,12 @@ const App = () => {
 
   return (
     <div style={{display:'flex', height:'100vh', fontFamily:'sans-serif'}}>
+      {toast && (
+        <div style={{
+          position:'fixed', right:16, top:16, background:'#333', color:'#fff', padding:'10px 14px', borderRadius:6,
+          boxShadow:'0 2px 8px rgba(0,0,0,0.2)', zIndex:1000
+        }}>{toast}</div>
+      )}
       <ChatPanel
         messages={messages}
         inputText={inputText}

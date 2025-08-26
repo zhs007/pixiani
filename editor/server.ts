@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import Fastify from 'fastify';
 import fastifyVite from '@fastify/vite';
+import { ProxyAgent, setGlobalDispatcher } from 'undici';
 import react from '@vitejs/plugin-react';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -11,7 +12,20 @@ import crypto from 'crypto';
 // --- Setup ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const SESSIONS_DIR = resolve(__dirname, 'sessions');
+// Store sessions outside of editor/ to avoid dev server restarts on file writes
+const SESSIONS_DIR = resolve(__dirname, '../.sessions');
+
+// Optional HTTP(S) proxy for outgoing requests (e.g., Gemini API)
+// Supported envs: HTTPS_PROXY, HTTP_PROXY, ALL_PROXY, PROXY_URL
+const PROXY_URL = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.ALL_PROXY || process.env.PROXY_URL;
+if (PROXY_URL) {
+  try {
+    setGlobalDispatcher(new ProxyAgent(PROXY_URL));
+    console.info(`[editor] Using proxy: ${PROXY_URL}`);
+  } catch (e) {
+    console.warn('[editor] Failed to set proxy agent:', e);
+  }
+}
 
 // In-memory store for session chat histories.
 // In a real app, this would be a database.
@@ -29,16 +43,54 @@ const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({
   model: GEMINI_MODEL,
   // The system instruction is the core prompt for the AI
-  systemInstruction: `You are an expert TypeScript developer specializing in Pixi.js animations. Your task is to create a new animation class based on a user's description. The class MUST adhere to the following rules:
-1. It MUST be a single TypeScript class definition, with necessary imports from 'pixi.js' and '../core/BaseAnimate'.
-2. It MUST extend the \`BaseAnimate\` class.
-3. It MUST have a \`public static readonly animationName: string\` property. This name should be a short, PascalCase identifier for the animation (e.g., 'MyCoolAnimation').
-4. It MUST have a \`public static getRequiredSpriteCount(): number\` method that returns the number of sprites the animation requires.
-5. It MUST implement the \`public update(deltaTime: number): void\` method. \`deltaTime\` is the time in seconds since the last frame.
-6. The animation logic should be contained within the \`update\` method. You can access the sprites to animate via \`this.sprites\`, which is an array of \`PIXI.Sprite\`.
-7. You MUST only use TypeScript and the Pixi.js library. Do not import any other libraries.
-8. When you have finished generating the code, you MUST call the \`create_animation_file\` function to save the file. The filename should be the same as the class name.
-9. Be conversational and explain what you are creating.`,
+  systemInstruction: `You are an expert TypeScript developer specializing in Pixi.js animations. Your task is to create a new animation class based on a user's description. Follow these exact rules so the file compiles in our editor:
+1) Imports:
+   - Use: \`import * as PIXI from 'pixi.js'\`.
+   - Use: \`import { BaseAnimate } from 'pixi-animation-library'\`.
+   - Do NOT import from relative core paths like '../core/BaseAnimate'.
+2) Class:
+   - Export a single named class that \`extends BaseAnimate\`.
+   - Include: \`public static readonly animationName: string\` (PascalCase, short).
+   - Include: \`public static getRequiredSpriteCount(): number\` (>= 1 if sprites are used).
+   - Implement: \`public update(deltaTime: number): void\` with all animation logic.
+   - Avoid custom constructors unless absolutely necessary. If you add one, the signature MUST be \`constructor(object: any, sprites: PIXI.Sprite[])\` and MUST call \`super(object, sprites)\`.
+3) Runtime notes:
+   - Access sprites via \`this.sprites\`.
+   - The editor sets \`anchor.set(0.5)\` for each sprite and calls \`play()\` automatically.
+   - Do NOT import any other libraries.
+4) File output:
+   - The file must export only that class.
+   - After you output the code, you MUST call the \`create_animation_file\` function to save it (use the class name for the filename).
+
+Examples of valid animations (concise):
+// Example A: Single-sprite bounce scale
+export class BounceScale extends BaseAnimate {
+  public static readonly animationName = 'BounceScale';
+  public static getRequiredSpriteCount(): number { return 1; }
+  private t = 0;
+  update(dt: number): void {
+    this.t += dt;
+    const s = 0.75 + Math.sin(this.t * Math.PI * 2) * 0.25; // 0.5..1.0
+    this.sprites[0].scale.set(s);
+  }
+}
+
+// Example B: Two-sprite orbit
+export class TwinOrbit extends BaseAnimate {
+  public static readonly animationName = 'TwinOrbit';
+  public static getRequiredSpriteCount(): number { return 2; }
+  private t = 0;
+  update(dt: number): void {
+    this.t += dt;
+    const r = 50;
+    this.sprites[0].x = Math.cos(this.t) * r;
+    this.sprites[0].y = Math.sin(this.t) * r;
+    this.sprites[1].x = Math.cos(this.t + Math.PI) * r;
+    this.sprites[1].y = Math.sin(this.t + Math.PI) * r;
+  }
+}
+
+Be conversational and explain briefly what you created before calling the tool.`,
 });
 
 const generationConfig = {
@@ -154,27 +206,45 @@ async function main() {
   server.get('/api/animations/:sessionId', async(request, reply) => {
       const { sessionId } = request.params as any;
       const sessionDir = resolve(SESSIONS_DIR, sessionId, 'animations');
+      const legacyDir = resolve(__dirname, 'sessions', sessionId, 'animations');
+      const buildList = async (dir: string) => {
+        const files = await fs.readdir(dir);
+        const tsFiles = files.filter(f => f.endsWith('.ts'));
+        return tsFiles.map(f => ({ name: f.replace(/\.ts$/, ''), fsPath: resolve(dir, f) }));
+      };
       try {
           await fs.access(sessionDir);
-          const files = await fs.readdir(sessionDir);
-          const tsFiles = files.filter(f => f.endsWith('.ts')).map(f => f.replace('.ts', ''));
-          return tsFiles;
-      } catch (error) {
-          // Directory doesn't exist, return empty array
-          return [];
-      }
+          const list = await buildList(sessionDir);
+          if (list.length > 0) return list;
+      } catch {}
+      // Fallback to legacy folder under editor/
+      try {
+          await fs.access(legacyDir);
+          const list = await buildList(legacyDir);
+          return list;
+      } catch {}
+      return [];
   });
 
   server.get('/api/animation-code/:sessionId/:animName', async (request, reply) => {
     const { sessionId, animName } = request.params as any;
-    const filePath = resolve(SESSIONS_DIR, sessionId, 'animations', `${animName}.ts`);
+    const primaryPath = resolve(SESSIONS_DIR, sessionId, 'animations', `${animName}.ts`);
+    const legacyPath = resolve(__dirname, 'sessions', sessionId, 'animations', `${animName}.ts`);
+    const tryRead = async (p: string) => {
+      await fs.access(p);
+      return await fs.readFile(p, 'utf-8');
+    };
     try {
-        await fs.access(filePath);
-        const code = await fs.readFile(filePath, 'utf-8');
+        let code: string | null = null;
+        try {
+          code = await tryRead(primaryPath);
+        } catch {
+          code = await tryRead(legacyPath);
+        }
         reply.header('Content-Type', 'text/plain');
         return code;
     } catch (error) {
-        server.log.error(error, `Could not find or read animation file: ${filePath}`);
+        server.log.error(error, `Could not find or read animation file: ${primaryPath} or legacy ${legacyPath}`);
         reply.status(404).send({ error: 'Animation file not found.' });
     }
   });

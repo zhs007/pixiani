@@ -12,7 +12,11 @@ export default defineConfig({
     fs: {
       // Allow reading files from the workspace root so we can access
       // editor/sessions and project assets during dev
-      allow: [searchForWorkspaceRoot(process.cwd())],
+      allow: [
+        searchForWorkspaceRoot(process.cwd()),
+        // Also allow the out-of-tree sessions folder
+        resolve(__dirname, '../.sessions')
+      ],
     },
   },
 

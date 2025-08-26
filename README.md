@@ -182,6 +182,36 @@ npm run dev:editor
 - Demo lives in `demo/` with its own Vite config at `demo/vite.config.ts`.
 - Editor lives in `editor/` with its Vite config at `editor/vite.config.ts` and dev server at `editor/server.ts`.
 
+## Proxy configuration (for Gemini API)
+
+The editor server supports HTTP(S) proxy via environment variables. Set one of the following before running `npm run dev:editor`:
+
+- HTTPS_PROXY
+- HTTP_PROXY
+- ALL_PROXY
+- PROXY_URL
+
+Examples:
+
+```bash
+# macOS / Linux (zsh/bash)
+export GEMINI_API_KEY=your_key_here
+export HTTPS_PROXY=http://127.0.0.1:7890
+npm run dev:editor
+```
+
+```powershell
+# Windows PowerShell
+$env:GEMINI_API_KEY="your_key_here"
+$env:HTTPS_PROXY="http://127.0.0.1:7890"
+npm run dev:editor
+```
+
+Notes:
+- Auth format: http://user:password@host:port
+- `NO_PROXY` is respected by Node for host exclusions (e.g., `localhost,127.0.0.1`).
+- The proxy applies to outgoing fetch calls (e.g., Gemini API) via Undici.
+
 ## License
 
 MIT License - see LICENSE file for details.
