@@ -54,3 +54,13 @@
 -   [x] **任务 5: 演示页面开发** - 完成
 -   [x] **任务 6: 构建与整合** - 完成
 -   [x] **任务 7: 最终审查与提交** - 完成
+-   [x] **任务 8: Gemini 动画编辑器** - 新增一个基于 Web 的子项目，允许用户通过自然语言描述生成、预览和下载新的动画。
+
+## Gemini 动画编辑器
+
+### 如何运行
+1.  在项目根目录创建一个 `.env` 文件。
+2.  在 `.env` 文件中添加您的 Gemini API 密钥: `GEMINI_API_KEY=your_api_key_here`
+3.  (可选) 您也可以指定要使用的模型: `GEMINI_MODEL=gemini-1.5-pro` (默认为 `gemini-1.5-flash`)
+4.  运行编辑器的开发服务器: `npm run dev:editor`
+5.  在浏览器中打开 `http://localhost:3000`。

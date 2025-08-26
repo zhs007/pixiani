@@ -156,7 +156,7 @@ Extends `PIXI.Container` with animation hosting capabilities.
 ```bash
 npm run build        # Build both library and demo
 npm run build:lib    # Build library only
-npm run build:demo   # Build demo only
+npm run build:demo   # Build demo only (uses demo/vite.config.ts)
 ```
 
 ### Testing
@@ -166,15 +166,51 @@ npm test          # Run tests
 npm run coverage  # Run tests with coverage
 ```
 
-### Development Server
+### Development Servers
 
 ```bash
-npm run dev  # Start development server for demo
+# Demo app (uses demo/vite.config.ts)
+npm run dev
+
+# Editor app (Fastify + Vite middleware; uses editor/vite.config.ts)
+export GEMINI_API_KEY=your_key_here
+npm run dev:editor
 ```
 
-## Demo
+## Demo & Editor
 
-The project includes a demo in the `demo/` directory that showcases the animation library in action.
+- Demo lives in `demo/` with its own Vite config at `demo/vite.config.ts`.
+- Editor lives in `editor/` with its Vite config at `editor/vite.config.ts` and dev server at `editor/server.ts`.
+
+## Proxy configuration (for Gemini API)
+
+The editor server supports HTTP(S) proxy via environment variables. Set one of the following before running `npm run dev:editor`:
+
+- HTTPS_PROXY
+- HTTP_PROXY
+- ALL_PROXY
+- PROXY_URL
+
+Examples:
+
+```bash
+# macOS / Linux (zsh/bash)
+export GEMINI_API_KEY=your_key_here
+export HTTPS_PROXY=http://127.0.0.1:7890
+npm run dev:editor
+```
+
+```powershell
+# Windows PowerShell
+$env:GEMINI_API_KEY="your_key_here"
+$env:HTTPS_PROXY="http://127.0.0.1:7890"
+npm run dev:editor
+```
+
+Notes:
+- Auth format: http://user:password@host:port
+- `NO_PROXY` is respected by Node for host exclusions (e.g., `localhost,127.0.0.1`).
+- The proxy applies to outgoing fetch calls (e.g., Gemini API) via Undici.
 
 ## License
 
