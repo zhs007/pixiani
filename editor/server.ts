@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import Fastify from 'fastify';
 import fastifyVite from '@fastify/vite';
+import react from '@vitejs/plugin-react';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
@@ -55,22 +56,24 @@ const safetySettings = [
 ];
 
 // --- Gemini Function Calling Tool ---
-const tools = {
-  function_declarations: [
-    {
-      name: 'create_animation_file',
-      description: 'Creates a new TypeScript animation file with the provided code.',
-      parameters: {
-        type: 'OBJECT',
-        properties: {
-          className: { type: 'STRING', description: 'The name of the animation class, in PascalCase.' },
-          code: { type: 'STRING', description: 'The full TypeScript code for the animation class.' },
+const tools: any = [
+  {
+    functionDeclarations: [
+      {
+        name: 'create_animation_file',
+        description: 'Creates a new TypeScript animation file with the provided code.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            className: { type: 'STRING', description: 'The name of the animation class, in PascalCase.' },
+            code: { type: 'STRING', description: 'The full TypeScript code for the animation class.' },
+          },
+          required: ['className', 'code'],
         },
-        required: ['className', 'code'],
       },
-    },
-  ],
-};
+    ],
+  },
+];
 
 // --- Fastify Server ---
 async function main() {
@@ -79,9 +82,10 @@ async function main() {
 
   // --- Vite Frontend ---
   await server.register(fastifyVite, {
-    root: resolve(__dirname, '..'),
+    // Point to the editor directory so @fastify/vite finds editor/vite.config.ts
+    root: resolve(__dirname),
     dev: true,
-    vite: { configFile: resolve(__dirname, '..', 'vite.editor.config.ts') },
+    spa: true,
   });
 
   // --- API Routes ---
@@ -104,17 +108,17 @@ async function main() {
         tools,
       });
 
-      const result = await chat.sendMessage(prompt);
-      const geminiResponse = result.response;
+  const result = await chat.sendMessage(prompt);
+  const geminiResponse: any = result.response as any;
 
       let responseText = geminiResponse.text();
 
       // Handle function calls
-      if (geminiResponse.functionCalls()) {
-        const calls = geminiResponse.functionCalls();
+      const calls: any[] = geminiResponse.functionCalls?.() ?? [];
+      if (calls.length) {
         for (const call of calls) {
           if (call.name === 'create_animation_file') {
-            const { className, code } = call.args;
+            const { className, code } = call.args || {};
             const sessionDir = resolve(SESSIONS_DIR, sessionId, 'animations');
             await fs.mkdir(sessionDir, { recursive: true });
             const filePath = resolve(sessionDir, `${className}.ts`);
@@ -127,8 +131,8 @@ async function main() {
       }
 
       // Update history in our session store
-      chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
-      chatHistory.push({ role: 'model', parts: [{ text: responseText }] });
+  chatHistory.push({ role: 'user', parts: [{ text: prompt }] } as any);
+  chatHistory.push({ role: 'model', parts: [{ text: responseText }] } as any);
 
       reply.send({ response: responseText, sessionId });
 

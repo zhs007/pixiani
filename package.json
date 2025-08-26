@@ -6,11 +6,11 @@
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "scripts": {
-    "dev": "vite",
+  "dev": "vite --config demo/vite.config.ts",
     "dev:editor": "tsx watch editor/server.ts",
     "build": "npm run build:lib && npm run build:demo",
     "build:lib": "vite build --config vite.lib.config.ts",
-    "build:demo": "vite build",
+  "build:demo": "vite build --config demo/vite.config.ts",
     "test": "vitest run --root .",
     "coverage": "vitest run --coverage --root ."
   },
