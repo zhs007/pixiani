@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js';
-import { IAnimate, IBaseObject, RenderOrderCallback, AnimateClass } from './types';
+import { IAnimate, IBaseObject, RenderOrderCallback, AnimateClass, AnimationState } from './types';
 
 /**
  * @abstract
@@ -9,23 +9,15 @@ import { IAnimate, IBaseObject, RenderOrderCallback, AnimateClass } from './type
  * structure, properties, and lifecycle methods that all concrete animations will share.
  */
 export abstract class BaseAnimate implements IAnimate {
-    /** The `BaseObject` this animation is attached to. */
     public readonly object: IBaseObject;
-    /** The array of sprites this animation will manipulate. */
     public readonly sprites: PIXI.Sprite[];
 
-    /** Whether the animation is currently playing. */
-    public isPlaying: boolean = false;
-    /** An optional callback that fires when the animation completes a full cycle. */
+    public state: AnimationState = 'IDLE';
+    public loop: boolean = true;
+    public speed: number = 1.0;
     public onComplete?: () => void;
-    /** An optional callback to request a change in sprite rendering order. */
     public onRenderOrderChange?: RenderOrderCallback;
 
-    /**
-     * @constructor
-     * @param {IBaseObject} object - The BaseObject this animation is attached to.
-     * @param {PIXI.Sprite[]} sprites - The sprites this animation will manipulate.
-     */
     constructor(object: IBaseObject, sprites: PIXI.Sprite[]) {
         if (sprites.length < (this.constructor as AnimateClass).getRequiredSpriteCount()) {
             throw new Error(`Animation "${this.name}" requires at least ${(this.constructor as AnimateClass).getRequiredSpriteCount()} sprites, but got ${sprites.length}.`);
@@ -34,14 +26,7 @@ export abstract class BaseAnimate implements IAnimate {
         this.sprites = sprites;
     }
 
-    /**
-     * The unique name of the animation, derived from the static property of the constructor.
-     * This is used for registration and creation in the AnimationManager.
-     * @readonly
-     * @type {string}
-     */
     public get name(): string {
-        // Access the static property from the instance's constructor.
         const constructor = this.constructor as AnimateClass;
         if (!constructor.animationName) {
             console.error("Animation class is missing the static 'animationName' property.");
@@ -50,34 +35,58 @@ export abstract class BaseAnimate implements IAnimate {
         return constructor.animationName;
     }
 
+    public get isPlaying(): boolean {
+        return this.state === 'PLAYING';
+    }
+
     /**
-     * Starts or resumes the animation.
+     * Resets the animation to its initial state.
+     * Must be implemented by subclasses to reset their specific properties (e.g., timers, progress).
      */
+    protected abstract reset(): void;
+
+    /**
+     * Sets the state of the animation and handles the looping logic.
+     * Subclasses should call this method to change their state.
+     * @param {AnimationState} newState - The new state to transition to.
+     */
+    protected setState(newState: AnimationState): void {
+        if (this.state === newState) return;
+
+        // If the animation has ended and should loop, restart it.
+        if (newState === 'ENDED' && this.loop) {
+            this.play();
+        } else {
+            this.state = newState;
+        }
+
+        // Fire onComplete callback if the animation has truly ended (and is not looping)
+        if (this.state === 'ENDED') {
+            this.onComplete?.();
+        }
+    }
+
     public play(): void {
-        this.isPlaying = true;
+        this.reset();
+        this.state = 'PLAYING';
     }
 
-    /**
-     * Pauses the animation.
-     */
     public pause(): void {
-        this.isPlaying = false;
+        if (this.isPlaying) {
+            this.setState('PAUSED');
+        }
     }
 
-    /**
-     * Stops the animation and resets its internal state.
-     * Concrete animation classes should override this method to reset their specific state
-     * (e.g., elapsed time, progress) and call `super.stop()`.
-     */
+    public resume(): void {
+        if (this.state === 'PAUSED') {
+            this.state = 'PLAYING';
+        }
+    }
+
     public stop(): void {
-        this.isPlaying = false;
+        this.reset();
+        this.setState('IDLE');
     }
 
-    /**
-     * Updates the animation's state based on the elapsed time.
-     * This method must be implemented by all concrete animation subclasses.
-     * @abstract
-     * @param {number} deltaTime - The time elapsed since the last frame, scaled by the global animation speed.
-     */
     public abstract update(deltaTime: number): void;
 }

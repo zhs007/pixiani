@@ -1,19 +1,28 @@
 import 'dotenv/config';
 import Fastify from 'fastify';
 import fastifyVite from '@fastify/vite';
+import fastifyStatic from '@fastify/static';
 import { ProxyAgent, setGlobalDispatcher } from 'undici';
 import react from '@vitejs/plugin-react';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
-import { promises as fs } from 'fs';
+import { promises as fs, createWriteStream } from 'fs';
 import crypto from 'crypto';
+import multipart from '@fastify/multipart';
+import path from 'path';
+import util from 'util';
+import { pipeline } from 'stream';
+
+const pump = util.promisify(pipeline);
 
 // --- Setup ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 // Store sessions outside of editor/ to avoid dev server restarts on file writes
 const SESSIONS_DIR = resolve(__dirname, '../.sessions');
+// Path to sprite assets folder (served by Vite publicDir in editor/vite.config.ts)
+const ASSETS_SPRITE_DIR = resolve(__dirname, '../assets/sprite');
 
 // Optional HTTP(S) proxy for outgoing requests (e.g., Gemini API)
 // Supported envs: HTTPS_PROXY, HTTP_PROXY, ALL_PROXY, PROXY_URL
@@ -132,6 +141,17 @@ async function main() {
   await fs.mkdir(SESSIONS_DIR, { recursive: true });
   const server = Fastify({ logger: true });
 
+  // Register multipart handler
+  server.register(multipart);
+
+  // Serve uploaded sprite assets at /sprite/*
+  server.register(fastifyStatic as any, {
+    root: ASSETS_SPRITE_DIR,
+    prefix: '/sprite/',
+    index: false,
+    decorateReply: false,
+  });
+
   // --- Vite Frontend ---
   await server.register(fastifyVite, {
     // Point to the editor directory so @fastify/vite finds editor/vite.config.ts
@@ -141,6 +161,47 @@ async function main() {
   });
 
   // --- API Routes ---
+
+  // Asset Management
+  server.get('/api/assets', async (request, reply) => {
+    const assetsDir = ASSETS_SPRITE_DIR;
+    try {
+      await fs.access(assetsDir);
+      const files = await fs.readdir(assetsDir);
+      // We only want image files, and filter out system files like .DS_Store
+      const imageFiles = files.filter(file => /\.(png|jpe?g|gif)$/i.test(file));
+      reply.send(imageFiles);
+    } catch (error) {
+      server.log.error(error, "Could not list assets in " + assetsDir);
+      // If the directory doesn't exist, return an empty array
+      reply.send([]);
+    }
+  });
+
+  server.post('/api/upload-asset', async (request, reply) => {
+    try {
+      const data = await request.file();
+      if (!data) {
+        return reply.status(400).send({ error: 'No file uploaded.' });
+      }
+
+      // Ensure the filename is safe
+      const safeFilename = path.basename(data.filename);
+      const assetsDir = ASSETS_SPRITE_DIR;
+      await fs.mkdir(assetsDir, { recursive: true }); // Ensure directory exists
+
+      const filePath = path.join(assetsDir, safeFilename);
+      await pump(data.file, createWriteStream(filePath));
+
+      server.log.info(`Uploaded file: ${filePath}`);
+      reply.send({ success: true, filename: safeFilename, path: `/sprite/${safeFilename}` });
+    } catch (error) {
+      server.log.error(error, "Asset upload failed");
+      reply.status(500).send({ error: 'Failed to upload asset.' });
+    }
+  });
+
+
   server.post('/api/chat', async (request, reply) => {
     try {
       let { history = [], prompt, sessionId } = request.body as any;

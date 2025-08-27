@@ -19,19 +19,27 @@ export interface IAnimate {
     readonly name: string;
     /** The `BaseObject` this animation is attached to. */
     readonly object: IBaseObject;
-    /** Whether the animation is currently playing. */
+    /** The current state of the animation. */
+    readonly state: AnimationState;
+    /** Whether the animation is currently in the 'PLAYING' state. */
     readonly isPlaying: boolean;
+    /** Whether the animation should loop. Settable. */
+    loop: boolean;
+    /** The playback speed multiplier. Settable. */
+    speed: number;
 
-    /** An optional callback that fires when the animation completes a full cycle. */
+    /** An optional callback that fires when the animation completes a full cycle without looping. */
     onComplete?: () => void;
     /** An optional callback to request a change in sprite rendering order. */
     onRenderOrderChange?: RenderOrderCallback;
 
-    /** Starts or resumes the animation. */
+    /** Starts the animation from the beginning. */
     play(): void;
     /** Pauses the animation. */
     pause(): void;
-    /** Stops the animation and resets its internal state. */
+    /** Resumes a paused animation. */
+    resume(): void;
+    /** Stops the animation and resets its internal state to IDLE. */
     stop(): void;
     /**
      * Updates the animation's state.
@@ -98,3 +106,12 @@ export interface IAnimationManager {
  * @param newOrder - An array of indices representing the desired new order.
  */
 export type RenderOrderCallback = (sprites: PIXI.Sprite[]) => void;
+
+/**
+ * Defines the possible lifecycle states of an animation.
+ * - IDLE: The animation has been instantiated but is not playing.
+ * - PLAYING: The animation is currently active and updating.
+ * - PAUSED: The animation is paused and will not update.
+ * - ENDED: The animation has completed a full cycle.
+ */
+export type AnimationState = 'IDLE' | 'PLAYING' | 'PAUSED' | 'ENDED';

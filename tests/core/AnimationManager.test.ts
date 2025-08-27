@@ -5,6 +5,7 @@ import { IAnimate, AnimateClass, IBaseObject } from '../../src/core/types';
 import * as PIXI from 'pixi.js';
 
 // A mock animation class for testing registration and creation.
+import { AnimationState } from '../../src/core/types';
 class MockAnimation implements IAnimate {
     public static readonly animationName = 'MockAnimation';
     public static getRequiredSpriteCount = () => 1;
@@ -12,19 +13,28 @@ class MockAnimation implements IAnimate {
     public name = MockAnimation.animationName;
     public object: IBaseObject;
     public sprites: PIXI.Sprite[];
-    public isPlaying = false;
+    public state: AnimationState = 'IDLE';
+    public loop: boolean = true;
+    public speed: number = 1.0;
+
     public onComplete?: (() => void);
-    public onRenderOrderChange?: ((sprites: PIXI.Sprite[]) => void);
+    public onRenderOrderChange?: ((sprites: PIXI.Sprite[], newOrder: number[]) => void);
 
     constructor(object: IBaseObject, sprites: PIXI.Sprite[]) {
         this.object = object;
         this.sprites = sprites;
     }
 
-    play = vi.fn(() => { this.isPlaying = true; });
-    pause = vi.fn(() => { this.isPlaying = false; });
-    stop = vi.fn(() => { this.isPlaying = false; }); // The manager will augment this
+    get isPlaying() {
+        return this.state === 'PLAYING';
+    }
+
+    play = vi.fn(() => { this.state = 'PLAYING'; });
+    pause = vi.fn(() => { this.state = 'PAUSED'; });
+    resume = vi.fn(() => { this.state = 'PLAYING'; });
+    stop = vi.fn(() => { this.state = 'IDLE'; }); // The manager will augment this
     update = vi.fn();
+    reset = vi.fn(); // Add reset mock
 }
 
 describe('AnimationManager', () => {
@@ -127,10 +137,13 @@ describe('AnimationManager', () => {
         manager.register(MockAnimation as unknown as AnimateClass);
         const instance1 = manager.create(MockAnimation.animationName, baseObject, sprites) as MockAnimation;
         const instance2 = manager.create(MockAnimation.animationName, baseObject, sprites) as MockAnimation;
+        instance1.play();
+        instance2.play();
+        manager.pauseAll();
 
         manager.resumeAll();
-        expect(instance1.play).toHaveBeenCalledOnce();
-        expect(instance2.play).toHaveBeenCalledOnce();
+        expect(instance1.resume).toHaveBeenCalledOnce();
+        expect(instance2.resume).toHaveBeenCalledOnce();
     });
 
     it('should remove an animation from the active list when its stop() method is called', () => {

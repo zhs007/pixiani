@@ -8,11 +8,11 @@ vi.mock('pixi.js', async () => {
     const actual = await vi.importActual('pixi.js');
 
     const buffer = {
-        data: new Float32Array([0, 0, 10, 0, 0, 10, 10, 10]),
+        data: new Float32Array(Array.from({ length: 21 * 11 * 2 }, (_, i) => (i % 2 === 0 ? (i / 2) % 21 * 10 : Math.floor(i / 42) * 10))),
         update: vi.fn(),
     };
 
-    const MeshPlane = vi.fn(() => ({
+    const MeshPlane = vi.fn().mockImplementation(() => ({
         geometry: {
             getBuffer: vi.fn((id) => {
                 if (id === 'aPosition') return buffer;
@@ -22,6 +22,7 @@ vi.mock('pixi.js', async () => {
         width: 100,
         height: 100,
         destroy: vi.fn(),
+        visible: true,
     }));
 
     const Sprite = vi.fn(() => ({
@@ -45,15 +46,14 @@ describe('FlagWaveAnimation', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         object = new BaseObject();
-        // Provide a mock implementation for addChild/removeChild to avoid errors
-        // with the incomplete PlaneMesh mock not having an 'emit' method.
         vi.spyOn(object, 'addChild').mockImplementation((child) => child);
         vi.spyOn(object, 'removeChild').mockImplementation((child) => child);
         sprite = new PIXI.Sprite();
     });
 
-    it('should create a MeshPlane and hide the source sprite on construction', () => {
+    it('should create a MeshPlane and hide the source sprite on play()', () => {
         const animation = new FlagWaveAnimation(object, [sprite]);
+        animation.play();
 
         expect(PIXI.MeshPlane).toHaveBeenCalledOnce();
         expect(object.addChild).toHaveBeenCalledOnce();
@@ -62,11 +62,11 @@ describe('FlagWaveAnimation', () => {
 
     it('should update mesh vertices when update is called', () => {
         const animation = new FlagWaveAnimation(object, [sprite]);
-        const mesh = (object.addChild as any).mock.calls[0][0];
+        animation.play();
+        const mesh = (animation as any).mesh;
         const buffer = mesh.geometry.getBuffer('aPosition');
         const originalVertices = new Float32Array(buffer.data);
 
-        animation.play();
         animation.update(0.1);
 
         expect(buffer.data).not.toEqual(originalVertices);
@@ -75,22 +75,24 @@ describe('FlagWaveAnimation', () => {
 
     it('should not update mesh vertices if not playing', () => {
         const animation = new FlagWaveAnimation(object, [sprite]);
-        const mesh = (object.addChild as any).mock.calls[0][0];
+        animation.play(); // Play to create the mesh
+        const mesh = (animation as any).mesh;
         const buffer = mesh.geometry.getBuffer('aPosition');
-        const originalVertices = new Float32Array(buffer.data);
 
-        // animation.play() is NOT called
+        animation.pause(); // Then pause it
+        const verticesBefore = new Float32Array(buffer.data);
         animation.update(0.1);
+        const verticesAfter = new Float32Array(buffer.data);
 
-        expect(buffer.data).toEqual(originalVertices);
+        expect(verticesAfter).toEqual(verticesBefore);
         expect(buffer.update).not.toHaveBeenCalled();
     });
 
     it('should destroy the mesh and restore the sprite on stop', () => {
         const animation = new FlagWaveAnimation(object, [sprite]);
-        const mesh = (object.addChild as any).mock.calls[0][0];
+        animation.play();
+        const mesh = (animation as any).mesh;
 
-        // Ensure initial state
         expect(sprite.visible).toBe(false);
 
         animation.stop();
@@ -98,5 +100,6 @@ describe('FlagWaveAnimation', () => {
         expect(object.removeChild).toHaveBeenCalledWith(mesh);
         expect(mesh.destroy).toHaveBeenCalledOnce();
         expect(sprite.visible).toBe(true);
+        expect((animation as any).mesh.visible).toBe(false);
     });
 });

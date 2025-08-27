@@ -30,14 +30,18 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
+    "@fastify/multipart": "^9.0.3",
     "@fastify/static": "*",
     "@fastify/vite": "*",
     "@google/generative-ai": "*",
+    "@types/busboy": "^1.5.4",
     "dotenv": "*",
     "fastify": "*",
     "pixi.js": "^8.1.6",
     "react": "*",
     "react-dom": "*",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "uuid": "*"
   },
   "files": [

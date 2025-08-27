@@ -102,7 +102,7 @@ export class AnimationManager implements IAnimationManager {
      * Resumes all paused animations.
      */
     public resumeAll(): void {
-        this.activeAnimations.forEach(anim => anim.play());
+        this.activeAnimations.forEach(anim => anim.resume());
     }
 
     /**
@@ -118,12 +118,13 @@ export class AnimationManager implements IAnimationManager {
      * @param {number} deltaTime - The time elapsed since the last frame, in seconds.
      */
     public update(deltaTime: number): void {
-        const scaledDeltaTime = deltaTime * this.speed;
+        const globalDeltaTime = deltaTime * this.speed;
         // Iterate backwards to allow animations to be safely removed during the update loop.
         for (let i = this.activeAnimations.length - 1; i >= 0; i--) {
             const anim = this.activeAnimations[i];
             if (anim.isPlaying) {
-                anim.update(scaledDeltaTime);
+                // Apply per-animation speed on top of global speed
+                anim.update(globalDeltaTime * anim.speed);
             }
         }
     }
