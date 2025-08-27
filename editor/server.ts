@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import Fastify from 'fastify';
 import fastifyVite from '@fastify/vite';
+import fastifyStatic from '@fastify/static';
 import { ProxyAgent, setGlobalDispatcher } from 'undici';
 import react from '@vitejs/plugin-react';
 import { resolve, dirname } from 'path';
@@ -20,6 +21,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 // Store sessions outside of editor/ to avoid dev server restarts on file writes
 const SESSIONS_DIR = resolve(__dirname, '../.sessions');
+// Path to sprite assets folder (served by Vite publicDir in editor/vite.config.ts)
+const ASSETS_SPRITE_DIR = resolve(__dirname, '../assets/sprite');
 
 // Optional HTTP(S) proxy for outgoing requests (e.g., Gemini API)
 // Supported envs: HTTPS_PROXY, HTTP_PROXY, ALL_PROXY, PROXY_URL
@@ -141,6 +144,14 @@ async function main() {
   // Register multipart handler
   server.register(multipart);
 
+  // Serve uploaded sprite assets at /sprite/*
+  server.register(fastifyStatic as any, {
+    root: ASSETS_SPRITE_DIR,
+    prefix: '/sprite/',
+    index: false,
+    decorateReply: false,
+  });
+
   // --- Vite Frontend ---
   await server.register(fastifyVite, {
     // Point to the editor directory so @fastify/vite finds editor/vite.config.ts
@@ -153,7 +164,7 @@ async function main() {
 
   // Asset Management
   server.get('/api/assets', async (request, reply) => {
-    const assetsDir = resolve(__dirname, '../../assets/sprite');
+    const assetsDir = ASSETS_SPRITE_DIR;
     try {
       await fs.access(assetsDir);
       const files = await fs.readdir(assetsDir);
@@ -176,7 +187,7 @@ async function main() {
 
       // Ensure the filename is safe
       const safeFilename = path.basename(data.filename);
-      const assetsDir = resolve(__dirname, '../../assets/sprite');
+      const assetsDir = ASSETS_SPRITE_DIR;
       await fs.mkdir(assetsDir, { recursive: true }); // Ensure directory exists
 
       const filePath = path.join(assetsDir, safeFilename);
