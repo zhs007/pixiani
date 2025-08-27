@@ -104,16 +104,26 @@ export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({ isOpen
         {error && <p style={{ color: 'red' }}>{error}</p>}
 
         <div style={styles.assetGrid}>
-          {assets.map(asset => (
+      {assets.map(asset => (
             <div
               key={asset}
-              onClick={() => handleToggleAsset(asset)}
+              onClick={(e) => { handleToggleAsset(asset); (e.currentTarget as HTMLDivElement).blur(); if (document.activeElement instanceof HTMLElement) { document.activeElement.blur(); } }}
+              onMouseDown={(e) => e.preventDefault()}
+              onFocus={(e) => (e.currentTarget as HTMLDivElement).blur()}
+              tabIndex={-1}
               style={{
                 ...styles.assetTile,
-                ...(selectedAssets.includes(asset) ? styles.selectedTile : {}),
+        ...(selectedAssets.includes(asset) ? styles.selectedTile : {}),
               }}
             >
-              <img src={`/sprite/${asset}`} alt={asset} style={styles.assetImage} />
+              <img
+                src={`/sprite/${asset}`}
+                alt={asset}
+                style={styles.assetImage}
+                tabIndex={-1}
+                draggable={false}
+                onFocus={(e) => (e.currentTarget as HTMLImageElement).blur()}
+              />
               <p style={styles.assetName}>{asset}</p>
             </div>
           ))}
@@ -174,27 +184,40 @@ const styles: { [key: string]: React.CSSProperties } = {
     minHeight: '200px',
   },
   assetTile: {
-    border: '2px solid transparent',
+    border: 0,
     borderRadius: '4px',
     padding: '5px',
     textAlign: 'center',
     cursor: 'pointer',
-    transition: 'border-color 0.2s, background-color 0.2s',
+    transition: 'box-shadow 0.2s, background-color 0.2s',
+  outline: 'none',
+  boxShadow: 'none',
+  WebkitTapHighlightColor: 'transparent',
     boxSizing: 'border-box',
+  userSelect: 'none',
+    backgroundColor: '#fff',
+    // subtle inner ring for unselected
+    boxShadow: 'inset 0 0 0 1px #e5e7eb',
   },
   selectedTile: {
-    borderColor: '#007bff',
+    // stronger inner ring for selected
+    boxShadow: 'inset 0 0 0 2px #007bff',
     backgroundColor: '#eaf4ff',
   },
   assetImage: {
     width: '100%',
     height: '80px',
     objectFit: 'contain',
+  outline: 'none',
+  border: 'none',
+  display: 'block',
+  pointerEvents: 'none',
   },
   assetName: {
     margin: '5px 0 0',
     fontSize: '12px',
     wordBreak: 'break-all',
+  outline: 'none',
   },
   footer: {
     display: 'flex',

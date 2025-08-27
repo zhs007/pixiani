@@ -142,28 +142,60 @@ export const App = () => {
     const app = new PIXI.Application();
 
     (async () => {
+      const w = Math.max(1, container.clientWidth || 600);
+      const h = Math.max(1, container.clientHeight || 400);
       await app.init({
-        resizeTo: container,
+        width: w,
+        height: h,
         backgroundColor: 0xffffff,
         autoDensity: true,
         resolution: window.devicePixelRatio || 1,
       });
+      // Make canvas not affect layout height; fill container
+      app.canvas.style.position = 'absolute';
+      app.canvas.style.inset = '0';
+      app.canvas.style.width = '100%';
+      app.canvas.style.height = '100%';
+
+      // Ensure container can host absolutely-positioned canvas
+      const prevPosition = container.style.position;
+      if (!prevPosition || prevPosition === 'static') {
+        container.style.position = 'relative';
+      }
+
       container.appendChild(app.canvas);
       pixiAppRef.current = app;
 
-      // Keep current animation centered when the renderer resizes
-      app.renderer.on('resize', () => {
+      const ro = new ResizeObserver(() => {
+        const nw = Math.max(1, container.clientWidth || w);
+        const nh = Math.max(1, container.clientHeight || h);
+        app.renderer.resize(nw, nh);
         if (currentObjectRef.current) {
-          currentObjectRef.current.x = app.renderer.width / 2;
-          currentObjectRef.current.y = app.renderer.height / 2;
+          currentObjectRef.current.x = nw / 2;
+          currentObjectRef.current.y = nh / 2;
         }
       });
+      ro.observe(container);
 
       app.ticker.add(() => {
         animationManager.update(app.ticker.deltaMS / 1000);
       });
+
+      // Initial sizing pass
+      const nw = Math.max(1, container.clientWidth || w);
+      const nh = Math.max(1, container.clientHeight || h);
+      app.renderer.resize(nw, nh);
+
+      // Cleanup part 1 for async init
+      return () => {
+        ro.disconnect();
+        if (prevPosition === '' || prevPosition === 'static') {
+          container.style.position = prevPosition || '';
+        }
+      };
     })();
 
+    // Cleanup part 2 for effect scope
     return () => {
       try { app.destroy(true, true); } catch {}
       pixiAppRef.current = null;
