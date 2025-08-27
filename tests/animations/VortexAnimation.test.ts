@@ -8,12 +8,11 @@ vi.mock('pixi.js', async () => {
     const actual = await vi.importActual('pixi.js');
 
     const buffer = {
-        // 11x11 grid = 121 points * 2 coordinates/point = 242
         data: new Float32Array(Array.from({ length: 121 * 2 }, (_, i) => (i % 2 === 0 ? (i / 2) % 11 * 10 : Math.floor(i / 22) * 10))),
         update: vi.fn(),
     };
 
-    const MeshPlane = vi.fn(() => ({
+    const MeshPlane = vi.fn().mockImplementation(() => ({
         geometry: {
             getBuffer: vi.fn((id) => {
                 if (id === 'aPosition') return buffer;
@@ -23,6 +22,7 @@ vi.mock('pixi.js', async () => {
         width: 200,
         height: 200,
         destroy: vi.fn(),
+        visible: true,
     }));
 
     const Sprite = vi.fn(() => ({
@@ -51,8 +51,9 @@ describe('VortexAnimation', () => {
         sprite = new PIXI.Sprite();
     });
 
-    it('should create a MeshPlane and hide the source sprite on construction', () => {
+    it('should create a MeshPlane and hide the source sprite on play()', () => {
         const animation = new VortexAnimation(object, [sprite]);
+        animation.play(); // This now creates the mesh
 
         expect(PIXI.MeshPlane).toHaveBeenCalledOnce();
         expect(object.addChild).toHaveBeenCalledOnce();
@@ -61,11 +62,12 @@ describe('VortexAnimation', () => {
 
     it('should update mesh vertices when update is called', () => {
         const animation = new VortexAnimation(object, [sprite]);
-        const mesh = (object.addChild as any).mock.calls[0][0];
+        animation.play();
+
+        const mesh = (animation as any).mesh;
         const buffer = mesh.geometry.getBuffer('aPosition');
         const originalVertices = new Float32Array(buffer.data);
 
-        animation.play();
         animation.update(0.1);
 
         expect(buffer.data).not.toEqual(originalVertices);
@@ -74,10 +76,10 @@ describe('VortexAnimation', () => {
 
     it('should pull vertices to the center at the end of the animation', () => {
         const animation = new VortexAnimation(object, [sprite]);
-        const mesh = (object.addChild as any).mock.calls[0][0];
+        animation.play();
+        const mesh = (animation as any).mesh;
         const buffer = mesh.geometry.getBuffer('aPosition');
 
-        animation.play();
         animation.update(3.0); // End of animation
 
         // All vertices should be at the center (100, 100)
@@ -89,14 +91,18 @@ describe('VortexAnimation', () => {
 
     it('should destroy the mesh and restore the sprite on stop', () => {
         const animation = new VortexAnimation(object, [sprite]);
-        const mesh = (object.addChild as any).mock.calls[0][0];
+        animation.play();
 
+        const mesh = (animation as any).mesh;
         expect(sprite.visible).toBe(false);
+        expect(mesh.visible).toBe(true);
 
         animation.stop();
 
         expect(object.removeChild).toHaveBeenCalledWith(mesh);
         expect(mesh.destroy).toHaveBeenCalledOnce();
         expect(sprite.visible).toBe(true);
+        // The mesh itself might still exist but should be made invisible by stop()
+        expect((animation as any).mesh.visible).toBe(false);
     });
 });
