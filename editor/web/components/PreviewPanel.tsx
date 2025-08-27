@@ -2,7 +2,7 @@ import React from 'react';
 import { AnimateClass } from 'pixi-animation-library';
 
 type PreviewPanelProps = {
-  pixiContainerRef: React.RefObject<HTMLDivElement>;
+    pixiContainerRef: React.RefObject<HTMLDivElement | null>;
   animations: AnimateClass[];
   selectedAnimation: string;
   onAnimationChange: (name: string) => void;
@@ -26,7 +26,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
   speed,
   onSpeedChange
 }) => (
-    <div style={{width:'60%', padding:'20px', display:'flex', flexDirection:'column', gap:'20px'}}>
+    <div style={{flex: 1, padding:'20px', display:'flex', flexDirection:'column', gap:'20px', minWidth: 0, minHeight: 0}}>
         <div style={{display:'flex', flexDirection:'column', gap:'15px'}}>
             <div style={{display:'flex', gap:'10px', alignItems:'center'}}>
                 <select value={selectedAnimation} onChange={e => onAnimationChange(e.target.value)} style={{flexGrow:1, padding:'8px'}}>
@@ -57,6 +57,6 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
                 </label>
             </div>
         </div>
-        <div ref={pixiContainerRef} style={{flexGrow:1, border:'2px solid #333', borderRadius:'8px', backgroundColor:'#ffffff'}}></div>
+    <div ref={pixiContainerRef} style={{flex: '1 1 0%', minHeight: 0, border:'2px solid #333', borderRadius:'8px', backgroundColor:'#ffffff'}}></div>
     </div>
 );

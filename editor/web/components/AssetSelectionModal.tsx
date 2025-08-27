@@ -179,7 +179,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: '5px',
     textAlign: 'center',
     cursor: 'pointer',
-    transition: 'border-color 0.2s',
+    transition: 'border-color 0.2s, background-color 0.2s',
+    boxSizing: 'border-box',
   },
   selectedTile: {
     borderColor: '#007bff',

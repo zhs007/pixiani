@@ -17,8 +17,6 @@ import { PreviewPanel } from './PreviewPanel';
 import { AssetSelectionModal } from './AssetSelectionModal';
 
 // --- Constants & Initial Setup ---
-const CANVAS_WIDTH = 600;
-const CANVAS_HEIGHT = 800;
 const standardAnimations: AnimateClass[] = [ScaleAnimation, FadeAnimation, ComplexPopAnimation, FlagWaveAnimation, VortexAnimation];
 
 // --- Main App Component ---
@@ -138,25 +136,38 @@ export const App = () => {
 
   // --- Pixi.js Setup ---
   useEffect(() => {
-    if (pixiContainerRef.current && !pixiAppRef.current) {
-      const app = new PIXI.Application();
-      app.init({
-        width: CANVAS_WIDTH,
-        height: CANVAS_HEIGHT,
+    const container = pixiContainerRef.current;
+    if (!container || pixiAppRef.current) return;
+
+    const app = new PIXI.Application();
+
+    (async () => {
+      await app.init({
+        resizeTo: container,
         backgroundColor: 0xffffff,
-      }).then(() => {
-        pixiContainerRef.current?.appendChild(app.canvas);
-        pixiAppRef.current = app;
-
-        // Center the stage
-        app.stage.x = app.renderer.width / 2;
-        app.stage.y = app.renderer.height / 2;
-
-        app.ticker.add(() => {
-          animationManager.update(app.ticker.deltaMS / 1000);
-        });
+        autoDensity: true,
+        resolution: window.devicePixelRatio || 1,
       });
-    }
+      container.appendChild(app.canvas);
+      pixiAppRef.current = app;
+
+      // Keep current animation centered when the renderer resizes
+      app.renderer.on('resize', () => {
+        if (currentObjectRef.current) {
+          currentObjectRef.current.x = app.renderer.width / 2;
+          currentObjectRef.current.y = app.renderer.height / 2;
+        }
+      });
+
+      app.ticker.add(() => {
+        animationManager.update(app.ticker.deltaMS / 1000);
+      });
+    })();
+
+    return () => {
+      try { app.destroy(true, true); } catch {}
+      pixiAppRef.current = null;
+    };
   }, [animationManager]);
 
   // --- Event Handlers ---
@@ -233,10 +244,10 @@ export const App = () => {
         s.anchor.set(0.5);
         obj.addChild(s);
     });
-    // Position at the new origin (center of the stage)
-    obj.x = 0;
-    obj.y = 0;
-    app.stage.addChild(obj);
+  // Position at the center of the canvas
+  obj.x = app.renderer.width / 2;
+  obj.y = app.renderer.height / 2;
+  app.stage.addChild(obj);
     currentObjectRef.current = obj;
 
     const anim = animationManager.create(selectedAnimationName, obj, sprites);

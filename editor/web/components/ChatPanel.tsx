@@ -12,7 +12,7 @@ type ChatPanelProps = {
 };
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({ messages, inputText, isThinking, onInputChange, onSendMessage, onNewTask }) => (
-    <div style={{width:'40%', borderRight:'1px solid #ccc', display:'flex', flexDirection:'column', backgroundColor: '#f9f9f9'}}>
+    <div style={{width:'40%', minWidth: '400px', borderRight:'1px solid #ccc', display:'flex', flexDirection:'column', backgroundColor: '#f9f9f9'}}>
         <div style={{padding:'10px', borderBottom:'1px solid #ccc', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
             <h3>Chat with Gemini</h3>
             <button onClick={onNewTask} style={{padding:'8px', cursor:'pointer'}}>New Task</button>
