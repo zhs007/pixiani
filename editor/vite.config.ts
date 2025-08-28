@@ -15,7 +15,7 @@ export default defineConfig({
       allow: [
         searchForWorkspaceRoot(process.cwd()),
         // Also allow the out-of-tree sessions folder
-        resolve(__dirname, '../.sessions')
+        resolve(__dirname, '../.sessions'),
       ],
     },
   },

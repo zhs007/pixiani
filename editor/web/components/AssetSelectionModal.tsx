@@ -7,7 +7,12 @@ type AssetSelectionModalProps = {
   requiredCount: number;
 };
 
-export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({ isOpen, onClose, onSelect, requiredCount }) => {
+export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({
+  isOpen,
+  onClose,
+  onSelect,
+  requiredCount,
+}) => {
   const [assets, setAssets] = useState<string[]>([]);
   const [selectedAssets, setSelectedAssets] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -39,10 +44,10 @@ export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({ isOpen
   }, [isOpen, fetchAssets]);
 
   const handleToggleAsset = (assetName: string) => {
-    setSelectedAssets(prev => {
+    setSelectedAssets((prev) => {
       const isSelected = prev.includes(assetName);
       if (isSelected) {
-        return prev.filter(a => a !== assetName);
+        return prev.filter((a) => a !== assetName);
       } else {
         if (prev.length < requiredCount) {
           return [...prev, assetName];
@@ -86,7 +91,7 @@ export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({ isOpen
 
   const handleConfirm = () => {
     if (selectedAssets.length === requiredCount) {
-      const urls = selectedAssets.map(name => `/sprite/${name}`);
+      const urls = selectedAssets.map((name) => `/sprite/${name}`);
       onSelect(urls);
     }
   };
@@ -98,22 +103,30 @@ export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({ isOpen
       <div style={styles.modal}>
         <h2 style={styles.header}>
           Select Sprites ({selectedAssets.length} / {requiredCount} selected)
-          <button onClick={onClose} style={styles.closeButton}>&times;</button>
+          <button onClick={onClose} style={styles.closeButton}>
+            &times;
+          </button>
         </h2>
 
         {error && <p style={{ color: 'red' }}>{error}</p>}
 
         <div style={styles.assetGrid}>
-      {assets.map(asset => (
+          {assets.map((asset) => (
             <div
               key={asset}
-              onClick={(e) => { handleToggleAsset(asset); (e.currentTarget as HTMLDivElement).blur(); if (document.activeElement instanceof HTMLElement) { document.activeElement.blur(); } }}
+              onClick={(e) => {
+                handleToggleAsset(asset);
+                (e.currentTarget as HTMLDivElement).blur();
+                if (document.activeElement instanceof HTMLElement) {
+                  document.activeElement.blur();
+                }
+              }}
               onMouseDown={(e) => e.preventDefault()}
               onFocus={(e) => (e.currentTarget as HTMLDivElement).blur()}
               tabIndex={-1}
               style={{
                 ...styles.assetTile,
-        ...(selectedAssets.includes(asset) ? styles.selectedTile : {}),
+                ...(selectedAssets.includes(asset) ? styles.selectedTile : {}),
               }}
             >
               <img
@@ -131,7 +144,11 @@ export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({ isOpen
 
         <div style={styles.footer}>
           <div style={styles.uploadSection}>
-            <input type="file" accept="image/png, image/jpeg, image/gif" onChange={handleFileChange} />
+            <input
+              type="file"
+              accept="image/png, image/jpeg, image/gif"
+              onChange={handleFileChange}
+            />
             <button onClick={handleUpload} disabled={uploading || !fileToUpload}>
               {uploading ? 'Uploading...' : 'Upload New'}
             </button>
@@ -155,22 +172,41 @@ export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({ isOpen
 // Basic styling to keep component self-contained
 const styles: { [key: string]: React.CSSProperties } = {
   overlay: {
-    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex',
-    alignItems: 'center', justifyContent: 'center', zIndex: 1001
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1001,
   },
   modal: {
-    background: 'white', padding: '20px', borderRadius: '8px',
-    width: '90%', maxWidth: '800px',
-    display: 'flex', flexDirection: 'column', gap: '15px',
+    background: 'white',
+    padding: '20px',
+    borderRadius: '8px',
+    width: '90%',
+    maxWidth: '800px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '15px',
     maxHeight: '90vh',
   },
   header: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    margin: 0, borderBottom: '1px solid #eee', paddingBottom: '10px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    margin: 0,
+    borderBottom: '1px solid #eee',
+    paddingBottom: '10px',
   },
   closeButton: {
-    background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer'
+    background: 'none',
+    border: 'none',
+    fontSize: '24px',
+    cursor: 'pointer',
   },
   assetGrid: {
     display: 'grid',
@@ -190,11 +226,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     textAlign: 'center',
     cursor: 'pointer',
     transition: 'box-shadow 0.2s, background-color 0.2s',
-  outline: 'none',
-  boxShadow: 'none',
-  WebkitTapHighlightColor: 'transparent',
+    outline: 'none',
+    WebkitTapHighlightColor: 'transparent',
     boxSizing: 'border-box',
-  userSelect: 'none',
+    userSelect: 'none',
     backgroundColor: '#fff',
     // subtle inner ring for unselected
     boxShadow: 'inset 0 0 0 1px #e5e7eb',
@@ -208,16 +243,16 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '100%',
     height: '80px',
     objectFit: 'contain',
-  outline: 'none',
-  border: 'none',
-  display: 'block',
-  pointerEvents: 'none',
+    outline: 'none',
+    border: 'none',
+    display: 'block',
+    pointerEvents: 'none',
   },
   assetName: {
     margin: '5px 0 0',
     fontSize: '12px',
     wordBreak: 'break-all',
-  outline: 'none',
+    outline: 'none',
   },
   footer: {
     display: 'flex',
@@ -238,7 +273,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '10px',
   },
   disabledButton: {
-      backgroundColor: '#ccc',
-      cursor: 'not-allowed',
-  }
+    backgroundColor: '#ccc',
+    cursor: 'not-allowed',
+  },
 };

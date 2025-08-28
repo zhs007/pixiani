@@ -1,88 +1,91 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
     <title>Pixi Animation Library Demo</title>
     <style>
-        * {
-            box-sizing: border-box;
-        }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            margin: 0;
-            background-color: #f0f0f0;
-            color: #333;
-        }
-        h1 {
-            margin: 20px 0;
-        }
-        #ui-container {
-            width: 95%;
-            max-width: 500px;
-            margin-bottom: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            padding: 15px;
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            background-color: #fff;
-        }
-        #pixi-canvas-container {
-            border: 2px solid #333;
-            border-radius: 8px;
-            overflow: hidden; /* Ensures canvas corners are rounded */
-        }
-        .control-group {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-        }
-        label {
-            font-weight: bold;
-        }
-        select, input, button {
-            width: 100%;
-            padding: 8px;
-            border-radius: 4px;
-            border: 1px solid #ccc;
-            font-size: 16px;
-        }
-        button {
-            background-color: #007bff;
-            color: white;
-            font-weight: bold;
-            border: none;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #0056b3;
-        }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin: 0;
+        background-color: #f0f0f0;
+        color: #333;
+      }
+      h1 {
+        margin: 20px 0;
+      }
+      #ui-container {
+        width: 95%;
+        max-width: 500px;
+        margin-bottom: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        padding: 15px;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        background-color: #fff;
+      }
+      #pixi-canvas-container {
+        border: 2px solid #333;
+        border-radius: 8px;
+        overflow: hidden; /* Ensures canvas corners are rounded */
+      }
+      .control-group {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      label {
+        font-weight: bold;
+      }
+      select,
+      input,
+      button {
+        width: 100%;
+        padding: 8px;
+        border-radius: 4px;
+        border: 1px solid #ccc;
+        font-size: 16px;
+      }
+      button {
+        background-color: #007bff;
+        color: white;
+        font-weight: bold;
+        border: none;
+        cursor: pointer;
+      }
+      button:hover {
+        background-color: #0056b3;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <h1>Pixi Animation Library Demo</h1>
     <div id="ui-container">
-        <div class="control-group">
-            <label for="animation-select">Animation:</label>
-            <select id="animation-select"></select>
-        </div>
-        <div id="sprite-slots-container">
-            <!-- Sprite slot dropdowns will be dynamically inserted here -->
-        </div>
-        <div class="control-group">
-            <label for="speed-input">Speed:</label>
-            <input type="number" id="speed-input" value="1.0" step="0.1" min="0">
-        </div>
-        <button id="play-button">Play Animation</button>
+      <div class="control-group">
+        <label for="animation-select">Animation:</label>
+        <select id="animation-select"></select>
+      </div>
+      <div id="sprite-slots-container">
+        <!-- Sprite slot dropdowns will be dynamically inserted here -->
+      </div>
+      <div class="control-group">
+        <label for="speed-input">Speed:</label>
+        <input type="number" id="speed-input" value="1.0" step="0.1" min="0" />
+      </div>
+      <button id="play-button">Play Animation</button>
     </div>
     <div id="pixi-canvas-container">
-        <!-- Pixi.js canvas will be appended here by the script -->
+      <!-- Pixi.js canvas will be appended here by the script -->
     </div>
     <script type="module" src="/main.ts"></script>
-</body>
+  </body>
 </html>

@@ -6,8 +6,8 @@ import * as PIXI from 'pixi.js';
  * can be added to it. The animation will operate on the children of this container.
  */
 export interface IBaseObject extends PIXI.Container {
-    // Currently, no extra properties are needed on the interface.
-    // The implementation in `BaseObject.ts` will contain the logic for managing animations.
+  // Currently, no extra properties are needed on the interface.
+  // The implementation in `BaseObject.ts` will contain the logic for managing animations.
 }
 
 /**
@@ -15,37 +15,37 @@ export interface IBaseObject extends PIXI.Container {
  * It defines the lifecycle and properties of an animation.
  */
 export interface IAnimate {
-    /** A unique identifier for the animation class. */
-    readonly name: string;
-    /** The `BaseObject` this animation is attached to. */
-    readonly object: IBaseObject;
-    /** The current state of the animation. */
-    readonly state: AnimationState;
-    /** Whether the animation is currently in the 'PLAYING' state. */
-    readonly isPlaying: boolean;
-    /** Whether the animation should loop. Settable. */
-    loop: boolean;
-    /** The playback speed multiplier. Settable. */
-    speed: number;
+  /** A unique identifier for the animation class. */
+  readonly name: string;
+  /** The `BaseObject` this animation is attached to. */
+  readonly object: IBaseObject;
+  /** The current state of the animation. */
+  readonly state: AnimationState;
+  /** Whether the animation is currently in the 'PLAYING' state. */
+  readonly isPlaying: boolean;
+  /** Whether the animation should loop. Settable. */
+  loop: boolean;
+  /** The playback speed multiplier. Settable. */
+  speed: number;
 
-    /** An optional callback that fires when the animation completes a full cycle without looping. */
-    onComplete?: () => void;
-    /** An optional callback to request a change in sprite rendering order. */
-    onRenderOrderChange?: RenderOrderCallback;
+  /** An optional callback that fires when the animation completes a full cycle without looping. */
+  onComplete?: () => void;
+  /** An optional callback to request a change in sprite rendering order. */
+  onRenderOrderChange?: RenderOrderCallback;
 
-    /** Starts the animation from the beginning. */
-    play(): void;
-    /** Pauses the animation. */
-    pause(): void;
-    /** Resumes a paused animation. */
-    resume(): void;
-    /** Stops the animation and resets its internal state to IDLE. */
-    stop(): void;
-    /**
-     * Updates the animation's state.
-     * @param deltaTime - The time elapsed since the last frame, in seconds.
-     */
-    update(deltaTime: number): void;
+  /** Starts the animation from the beginning. */
+  play(): void;
+  /** Pauses the animation. */
+  pause(): void;
+  /** Resumes a paused animation. */
+  resume(): void;
+  /** Stops the animation and resets its internal state to IDLE. */
+  stop(): void;
+  /**
+   * Updates the animation's state.
+   * @param deltaTime - The time elapsed since the last frame, in seconds.
+   */
+  update(deltaTime: number): void;
 }
 
 /**
@@ -55,11 +55,11 @@ export interface IAnimate {
  * @param sprites - The array of sprites the animation will manipulate.
  */
 export type AnimateClass = {
-    /** A static property to get the unique name of the animation class. */
-    readonly animationName: string;
-    /** A static method to get the number of sprites required by this animation. */
-    getRequiredSpriteCount(): number;
-    new (object: IBaseObject, sprites: PIXI.Sprite[]): IAnimate;
+  /** A static property to get the unique name of the animation class. */
+  readonly animationName: string;
+  /** A static method to get the number of sprites required by this animation. */
+  getRequiredSpriteCount(): number;
+  new (object: IBaseObject, sprites: PIXI.Sprite[]): IAnimate;
 };
 
 /**
@@ -67,35 +67,35 @@ export type AnimateClass = {
  * It handles registration, creation, and global updates for all animations.
  */
 export interface IAnimationManager {
-    /**
-     * Registers an animation class so it can be created by name.
-     * @param animateClass - The animation class to register.
-     */
-    register(animateClass: AnimateClass): void;
+  /**
+   * Registers an animation class so it can be created by name.
+   * @param animateClass - The animation class to register.
+   */
+  register(animateClass: AnimateClass): void;
 
-    /**
-     * Creates an instance of a registered animation.
-     * @param name - The name of the animation to create.
-     * @param object - The `IBaseObject` to attach the animation to.
-     * @param sprites - The sprites to be used by the animation.
-     * @returns An `IAnimate` instance, or `undefined` if the name is not registered.
-     */
-    create(name: string, object: IBaseObject, sprites: PIXI.Sprite[]): IAnimate | undefined;
+  /**
+   * Creates an instance of a registered animation.
+   * @param name - The name of the animation to create.
+   * @param object - The `IBaseObject` to attach the animation to.
+   * @param sprites - The sprites to be used by the animation.
+   * @returns An `IAnimate` instance, or `undefined` if the name is not registered.
+   */
+  create(name: string, object: IBaseObject, sprites: PIXI.Sprite[]): IAnimate | undefined;
 
-    /** Pauses all active animations. */
-    pauseAll(): void;
-    /** Resumes all paused animations. */
-    resumeAll(): void;
-    /**
-     * Sets the playback speed for all animations.
-     * @param speed - The playback speed (e.g., 1.0 is normal, 0.5 is half speed).
-     */
-    setSpeed(speed: number): void;
-    /**
-     * Updates all active animations. This should be called once per frame.
-     * @param deltaTime - The time elapsed since the last frame, in seconds.
-     */
-    update(deltaTime: number): void;
+  /** Pauses all active animations. */
+  pauseAll(): void;
+  /** Resumes all paused animations. */
+  resumeAll(): void;
+  /**
+   * Sets the playback speed for all animations.
+   * @param speed - The playback speed (e.g., 1.0 is normal, 0.5 is half speed).
+   */
+  setSpeed(speed: number): void;
+  /**
+   * Updates all active animations. This should be called once per frame.
+   * @param deltaTime - The time elapsed since the last frame, in seconds.
+   */
+  update(deltaTime: number): void;
 }
 
 /**

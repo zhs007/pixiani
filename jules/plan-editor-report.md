@@ -14,13 +14,13 @@ The initial approach of creating a separate, independent Node.js project within 
 
 ## Final Features
 
--   A fully functional chat interface for interacting with the AI.
--   Dynamic generation and loading of new animation code.
--   A preview panel with a dropdown for all available animations (standard and generated).
--   A "Play" button to render the selected animation.
--   A "New Task" button that clears the conversation context.
--   A "Download" button to save the generated `.ts` file.
--   Instructions in `jules.md` on how to run the new editor, including setting up the `GEMINI_API_KEY` in a `.env` file.
+- A fully functional chat interface for interacting with the AI.
+- Dynamic generation and loading of new animation code.
+- A preview panel with a dropdown for all available animations (standard and generated).
+- A "Play" button to render the selected animation.
+- A "New Task" button that clears the conversation context.
+- A "Download" button to save the generated `.ts` file.
+- Instructions in `jules.md` on how to run the new editor, including setting up the `GEMINI_API_KEY` in a `.env` file.
 
 ## Conclusion
 

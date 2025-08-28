@@ -31,7 +31,7 @@ Before starting, please install dependencies using `npm install`.
 
 2.  **Comments:**
     - Use JSDoc for all exported classes, methods, functions, and types.
-    - Comments should explain *why* the code is doing something, not just *what* it is doing.
+    - Comments should explain _why_ the code is doing something, not just _what_ it is doing.
 
 3.  **Modularity:**
     - Keep files small and focused on a single responsibility.

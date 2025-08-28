@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "rootDir": "..",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "baseUrl": "..",
+    "paths": {
+      "pixi-animation-library": ["src/index.ts"]
+    },
+    "types": ["node", "vite/client", "react", "react-dom"]
+  },
+  "include": ["server.ts", "web/**/*.ts", "web/**/*.tsx", "vite.config.ts", "types/**/*.d.ts"],
+  "exclude": ["../node_modules", "../dist"]
+}

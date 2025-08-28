@@ -43,12 +43,12 @@ gameObject.addChild(sprite);
 // Create and play a scale animation
 const scaleAnim = animationManager.create('scale', gameObject, [sprite]);
 if (scaleAnim) {
-    scaleAnim.play();
+  scaleAnim.play();
 }
 
 // Update animations in the game loop
 app.ticker.add((delta) => {
-    animationManager.update(delta / 60); // Convert frames to seconds
+  animationManager.update(delta / 60); // Convert frames to seconds
 });
 ```
 
@@ -61,6 +61,7 @@ A `BaseObject` is a container that can host animations. It extends `PIXI.Contain
 ### AnimationManager
 
 The `AnimationManager` is responsible for:
+
 - Registering animation classes
 - Creating animation instances
 - Managing global animation state
@@ -81,43 +82,43 @@ import { AnimateClass, IAnimate, IBaseObject } from 'pixi-animation-library';
 import * as PIXI from 'pixi.js';
 
 export class MyCustomAnimation implements IAnimate {
-    static readonly animationName = 'my-custom';
-    
-    static getRequiredSpriteCount(): number {
-        return 1; // Number of sprites this animation requires
-    }
-    
-    readonly name = MyCustomAnimation.animationName;
-    readonly object: IBaseObject;
-    readonly isPlaying: boolean = false;
-    
-    onComplete?: () => void;
-    onRenderOrderChange?: RenderOrderCallback;
-    
-    constructor(object: IBaseObject, sprites: PIXI.Sprite[]) {
-        this.object = object;
-        // Initialize your animation state
-    }
-    
-    play(): void {
-        this.isPlaying = true;
-        // Start animation logic
-    }
-    
-    pause(): void {
-        this.isPlaying = false;
-        // Pause animation logic
-    }
-    
-    stop(): void {
-        this.isPlaying = false;
-        // Reset animation state
-    }
-    
-    update(deltaTime: number): void {
-        if (!this.isPlaying) return;
-        // Update animation state
-    }
+  static readonly animationName = 'my-custom';
+
+  static getRequiredSpriteCount(): number {
+    return 1; // Number of sprites this animation requires
+  }
+
+  readonly name = MyCustomAnimation.animationName;
+  readonly object: IBaseObject;
+  readonly isPlaying: boolean = false;
+
+  onComplete?: () => void;
+  onRenderOrderChange?: RenderOrderCallback;
+
+  constructor(object: IBaseObject, sprites: PIXI.Sprite[]) {
+    this.object = object;
+    // Initialize your animation state
+  }
+
+  play(): void {
+    this.isPlaying = true;
+    // Start animation logic
+  }
+
+  pause(): void {
+    this.isPlaying = false;
+    // Pause animation logic
+  }
+
+  stop(): void {
+    this.isPlaying = false;
+    // Reset animation state
+  }
+
+  update(deltaTime: number): void {
+    if (!this.isPlaying) return;
+    // Update animation state
+  }
 }
 
 // Register your custom animation
@@ -208,6 +209,7 @@ npm run dev:editor
 ```
 
 Notes:
+
 - Auth format: http://user:password@host:port
 - `NO_PROXY` is respected by Node for host exclusions (e.g., `localhost,127.0.0.1`).
 - The proxy applies to outgoing fetch calls (e.g., Gemini API) via Undici.

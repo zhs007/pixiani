@@ -3,7 +3,6 @@ import Fastify from 'fastify';
 import fastifyVite from '@fastify/vite';
 import fastifyStatic from '@fastify/static';
 import { ProxyAgent, setGlobalDispatcher } from 'undici';
-import react from '@vitejs/plugin-react';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
@@ -26,11 +25,15 @@ const ASSETS_SPRITE_DIR = resolve(__dirname, '../assets/sprite');
 
 // Optional HTTP(S) proxy for outgoing requests (e.g., Gemini API)
 // Supported envs: HTTPS_PROXY, HTTP_PROXY, ALL_PROXY, PROXY_URL
-const PROXY_URL = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.ALL_PROXY || process.env.PROXY_URL;
+const PROXY_URL =
+  process.env.HTTPS_PROXY ||
+  process.env.HTTP_PROXY ||
+  process.env.ALL_PROXY ||
+  process.env.PROXY_URL;
 if (PROXY_URL) {
   try {
     setGlobalDispatcher(new ProxyAgent(PROXY_URL));
-    console.info(`[editor] Using proxy: ${PROXY_URL}`);
+    console.warn(`[editor] Using proxy: ${PROXY_URL}`);
   } catch (e) {
     console.warn('[editor] Failed to set proxy agent:', e);
   }
@@ -42,10 +45,10 @@ const sessions = new Map<string, any[]>();
 
 // --- Gemini AI Configuration ---
 const API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 
 if (!API_KEY) {
-  console.error("FATAL: GEMINI_API_KEY environment variable is not set.");
+  console.error('FATAL: GEMINI_API_KEY environment variable is not set.');
   process.exit(1);
 }
 const genAI = new GoogleGenerativeAI(API_KEY);
@@ -147,10 +150,22 @@ const generationConfig = {
 };
 
 const safetySettings = [
-    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+  {
+    category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+  },
 ];
 
 // --- Gemini Function Calling Tool ---
@@ -163,20 +178,33 @@ const tools: any = [
         parameters: {
           type: 'OBJECT',
           properties: {
-            className: { type: 'STRING', description: 'The name of the animation class, in PascalCase.' },
-            code: { type: 'STRING', description: 'The full TypeScript code for the animation class.' },
+            className: {
+              type: 'STRING',
+              description: 'The name of the animation class, in PascalCase.',
+            },
+            code: {
+              type: 'STRING',
+              description: 'The full TypeScript code for the animation class.',
+            },
           },
           required: ['className', 'code'],
         },
       },
       {
         name: 'update_animation_file',
-        description: 'Updates an existing TypeScript animation file with new code (same class name).',
+        description:
+          'Updates an existing TypeScript animation file with new code (same class name).',
         parameters: {
           type: 'OBJECT',
           properties: {
-            className: { type: 'STRING', description: 'The name of the animation class to update (PascalCase).' },
-            code: { type: 'STRING', description: 'The full, updated TypeScript code for the animation class.' },
+            className: {
+              type: 'STRING',
+              description: 'The name of the animation class to update (PascalCase).',
+            },
+            code: {
+              type: 'STRING',
+              description: 'The full, updated TypeScript code for the animation class.',
+            },
           },
           required: ['className', 'code'],
         },
@@ -220,10 +248,10 @@ async function main() {
       await fs.access(assetsDir);
       const files = await fs.readdir(assetsDir);
       // We only want image files, and filter out system files like .DS_Store
-      const imageFiles = files.filter(file => /\.(png|jpe?g|gif)$/i.test(file));
+      const imageFiles = files.filter((file) => /\.(png|jpe?g|gif)$/i.test(file));
       reply.send(imageFiles);
     } catch (error) {
-      server.log.error(error, "Could not list assets in " + assetsDir);
+      server.log.error(error, 'Could not list assets in ' + assetsDir);
       // If the directory doesn't exist, return an empty array
       reply.send([]);
     }
@@ -247,15 +275,17 @@ async function main() {
       server.log.info(`Uploaded file: ${filePath}`);
       reply.send({ success: true, filename: safeFilename, path: `/sprite/${safeFilename}` });
     } catch (error) {
-      server.log.error(error, "Asset upload failed");
+      server.log.error(error, 'Asset upload failed');
       reply.status(500).send({ error: 'Failed to upload asset.' });
     }
   });
 
-
   server.post('/api/chat', async (request, reply) => {
     try {
-      let { history = [], prompt, sessionId } = request.body as any;
+      const body = request.body as any;
+      const _history = body?.history ?? [];
+      const { prompt } = body as { prompt: string };
+      let { sessionId } = body as { sessionId?: string };
 
       if (!sessionId) {
         sessionId = crypto.randomUUID();
@@ -272,104 +302,101 @@ async function main() {
         tools,
       });
 
-  const result = await chat.sendMessage(prompt);
-  const geminiResponse: any = result.response as any;
+      const result = await chat.sendMessage(prompt);
+      const geminiResponse: any = result.response as any;
 
       let responseText = geminiResponse.text();
 
-  // Handle function calls (no validation)
-  const processCalls = async (resp: any) => {
+      // Handle function calls (no validation)
+      const processCalls = async (resp: any) => {
         const calls: any[] = resp.functionCalls?.() ?? [];
         if (!calls.length) return resp.text();
         let lastText = resp.text();
         for (const call of calls) {
-          if (call.name !== 'create_animation_file' && call.name !== 'update_animation_file') continue;
-          let { className, code } = call.args || {};
+          if (call.name !== 'create_animation_file' && call.name !== 'update_animation_file')
+            continue;
+          const { className, code } = call.args || {};
           if (!className || !code) continue;
 
           // First write
           const sessionDir = resolve(SESSIONS_DIR, sessionId, 'animations');
           await fs.mkdir(sessionDir, { recursive: true });
-          let filePath = resolve(sessionDir, `${className}.ts`);
+          const filePath = resolve(sessionDir, `${className}.ts`);
           await fs.writeFile(filePath, code);
 
-          console.log(`Animation file created: ${filePath}`);
+          server.log.info(`Animation file created: ${filePath}`);
           lastText = `I have created the animation file \`${className}.ts\`. You can now select it from the dropdown to preview it.`;
         }
         return lastText;
       };
 
-  responseText = await processCalls(geminiResponse);
+      responseText = await processCalls(geminiResponse);
 
-  // Update history in our session store
-  chatHistory.push({ role: 'user', parts: [{ text: prompt }] } as any);
-  chatHistory.push({ role: 'model', parts: [{ text: responseText }] } as any);
+      // Update history in our session store
+      chatHistory.push({ role: 'user', parts: [{ text: prompt }] } as any);
+      chatHistory.push({ role: 'model', parts: [{ text: responseText }] } as any);
 
       reply.send({ response: responseText, sessionId });
-
     } catch (error) {
       server.log.error(error, 'Error processing chat request');
       reply.status(500).send({ error: 'Failed to process chat request' });
     }
   });
 
-  server.post('/api/clear_session', async (request, reply) => {
-      const { sessionId } = request.body as any;
-      if (sessionId && sessions.has(sessionId)) {
-          sessions.set(sessionId, []);
-          server.log.info(`Cleared session for ${sessionId}`);
-      }
-      return { success: true };
+  server.post('/api/clear_session', async (request, _reply) => {
+    const { sessionId } = request.body as any;
+    if (sessionId && sessions.has(sessionId)) {
+      sessions.set(sessionId, []);
+      server.log.info(`Cleared session for ${sessionId}`);
+    }
+    return { success: true };
   });
 
-  server.get('/api/animations/:sessionId', async(request, reply) => {
-      const { sessionId } = request.params as any;
-      const sessionDir = resolve(SESSIONS_DIR, sessionId, 'animations');
-      const legacyDir = resolve(__dirname, 'sessions', sessionId, 'animations');
-      const buildList = async (dir: string) => {
-        const files = await fs.readdir(dir);
-        const tsFiles = files.filter(f => f.endsWith('.ts'));
-        return tsFiles.map(f => ({ name: f.replace(/\.ts$/, ''), fsPath: resolve(dir, f) }));
-      };
-      try {
-          await fs.access(sessionDir);
-          const list = await buildList(sessionDir);
-          if (list.length > 0) return list;
-      } catch {}
-      // Fallback to legacy folder under editor/
-      try {
-          await fs.access(legacyDir);
-          const list = await buildList(legacyDir);
-          return list;
-      } catch {}
-      return [];
+  server.get('/api/animations/:sessionId', async (request, _reply) => {
+    const { sessionId } = request.params as any;
+    const sessionDir = resolve(SESSIONS_DIR, sessionId, 'animations');
+    const legacyDir = resolve(__dirname, 'sessions', sessionId, 'animations');
+    const buildList = async (dir: string) => {
+      const files = await fs.readdir(dir);
+      const tsFiles = files.filter((f) => f.endsWith('.ts'));
+      return tsFiles.map((f) => ({ name: f.replace(/\.ts$/, ''), fsPath: resolve(dir, f) }));
+    };
+    try {
+      await fs.access(sessionDir);
+      const list = await buildList(sessionDir);
+      if (list.length > 0) return list;
+    } catch {}
+    // Fallback to legacy folder under editor/
+    try {
+      await fs.access(legacyDir);
+      const list = await buildList(legacyDir);
+      return list;
+    } catch {}
+    return [];
   });
 
-  server.get('/api/animation-code/:sessionId/:animName', async (request, reply) => {
+  server.get('/api/animation-code/:sessionId/:animName', async (request, _reply) => {
     const { sessionId, animName } = request.params as any;
     const primaryPath = resolve(SESSIONS_DIR, sessionId, 'animations', `${animName}.ts`);
     const legacyPath = resolve(__dirname, 'sessions', sessionId, 'animations', `${animName}.ts`);
     const tryRead = async (p: string) => {
-      await fs.access(p);
-      return await fs.readFile(p, 'utf-8');
+      try {
+        return await fs.readFile(p, 'utf-8');
+      } catch {
+        return null;
+      }
     };
-    try {
-        let code: string | null = null;
-        try {
-          code = await tryRead(primaryPath);
-        } catch {
-          code = await tryRead(legacyPath);
-        }
-        reply.header('Content-Type', 'text/plain');
-        return code;
-    } catch (error) {
-        server.log.error(error, `Could not find or read animation file: ${primaryPath} or legacy ${legacyPath}`);
-        reply.status(404).send({ error: 'Animation file not found.' });
-    }
+    const fromPrimary = await tryRead(primaryPath);
+    if (fromPrimary) return fromPrimary;
+    const fromLegacy = await tryRead(legacyPath);
+    if (fromLegacy) return fromLegacy;
+    return '';
   });
 
   // --- Frontend Catch-all ---
-  server.get('/*', (req, reply) => { reply.html(); });
+  server.get('/*', (req, reply) => {
+    reply.html();
+  });
 
   await server.vite.ready();
   await server.listen({ port: 3000 });

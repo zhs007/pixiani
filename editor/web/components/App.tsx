@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as PIXI from 'pixi.js';
 import {
-    AnimationManager,
-    BaseObject,
-    ScaleAnimation,
-    FadeAnimation,
-    ComplexPopAnimation,
-    FlagWaveAnimation,
-    VortexAnimation,
+  AnimationManager,
+  BaseObject,
+  ScaleAnimation,
+  FadeAnimation,
+  ComplexPopAnimation,
+  FlagWaveAnimation,
+  VortexAnimation,
   BlackHoleSpiralAnimation,
-    AnimateClass,
+  AnimateClass,
 } from 'pixi-animation-library';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -18,7 +18,14 @@ import { PreviewPanel } from './PreviewPanel';
 import { AssetSelectionModal } from './AssetSelectionModal';
 
 // --- Constants & Initial Setup ---
-const standardAnimations: AnimateClass[] = [ScaleAnimation, FadeAnimation, ComplexPopAnimation, FlagWaveAnimation, VortexAnimation, BlackHoleSpiralAnimation];
+const standardAnimations: AnimateClass[] = [
+  ScaleAnimation,
+  FadeAnimation,
+  ComplexPopAnimation,
+  FlagWaveAnimation,
+  VortexAnimation,
+  BlackHoleSpiralAnimation,
+];
 
 // --- Main App Component ---
 export const App = () => {
@@ -28,8 +35,11 @@ export const App = () => {
   const [isThinking, setIsThinking] = useState(false);
 
   const [animationManager] = useState(() => new AnimationManager());
-  const [availableAnimations, setAvailableAnimations] = useState<AnimateClass[]>(standardAnimations);
-  const [selectedAnimationName, setSelectedAnimationName] = useState<string>(standardAnimations[0].animationName);
+  const [availableAnimations, setAvailableAnimations] =
+    useState<AnimateClass[]>(standardAnimations);
+  const [selectedAnimationName, setSelectedAnimationName] = useState<string>(
+    standardAnimations[0].animationName,
+  );
   const [toast, setToast] = useState<string | null>(null);
   const toastTimerRef = React.useRef<number | null>(null);
   const hasLoadedCustomOnceRef = React.useRef(false);
@@ -86,22 +96,24 @@ export const App = () => {
       const list: { name: string; fsPath: string }[] = await res.json();
 
       const customAnimModules = await Promise.all(
-        list.map(item => import(/* @vite-ignore */ `/@fs/${item.fsPath}`))
+        list.map((item) => import(/* @vite-ignore */ `/@fs/${item.fsPath}`)),
       );
 
       const customAnimClasses = customAnimModules
-        .map(mod => mod[Object.keys(mod)[0]] as AnimateClass)
+        .map((mod) => mod[Object.keys(mod)[0]] as AnimateClass)
         .filter(Boolean);
 
       const allAnims = [...standardAnimations, ...customAnimClasses];
-      allAnims.forEach(anim => animationManager.register(anim));
+      allAnims.forEach((anim) => animationManager.register(anim));
       setAvailableAnimations(allAnims);
 
       // Detect newly added custom animations to show a toast
-      const currentNames = new Set(list.map(i => i.name));
+      const currentNames = new Set(list.map((i) => i.name));
       if (hasLoadedCustomOnceRef.current) {
         let newCount = 0;
-        currentNames.forEach(n => { if (!lastCustomNamesRef.current.has(n)) newCount++; });
+        currentNames.forEach((n) => {
+          if (!lastCustomNamesRef.current.has(n)) newCount++;
+        });
         if (newCount > 0) {
           setToast(`已加载 ${newCount} 个新动画`);
           if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
@@ -110,9 +122,8 @@ export const App = () => {
       }
       lastCustomNamesRef.current = currentNames;
       hasLoadedCustomOnceRef.current = true;
-
     } catch (error) {
-      console.error("Failed to load custom animations:", error);
+      console.error('Failed to load custom animations:', error);
     }
   }, [sessionId, animationManager]);
 
@@ -132,7 +143,9 @@ export const App = () => {
   useEffect(() => {
     if (!sessionId) return;
     const key = `selectedAnim:${sessionId}`;
-    try { localStorage.setItem(key, selectedAnimationName); } catch {}
+    try {
+      localStorage.setItem(key, selectedAnimationName);
+    } catch {}
   }, [selectedAnimationName, sessionId]);
 
   // --- Pixi.js Setup ---
@@ -157,7 +170,9 @@ export const App = () => {
         resolution: window.devicePixelRatio || 1,
       });
       if (disposed) {
-        try { app.destroy(true, true); } catch {}
+        try {
+          app.destroy(true, true);
+        } catch {}
         return;
       }
 
@@ -201,13 +216,17 @@ export const App = () => {
     return () => {
       disposed = true;
       if (ro) {
-        try { ro.disconnect(); } catch {}
+        try {
+          ro.disconnect();
+        } catch {}
         ro = null;
       }
       if (pixiAppRef.current === app) {
         pixiAppRef.current = null;
       }
-      try { app.destroy(true, true); } catch {}
+      try {
+        app.destroy(true, true);
+      } catch {}
       // Remove canvas and restore container position
       try {
         if (app.canvas && app.canvas.parentElement === container) {
@@ -226,7 +245,7 @@ export const App = () => {
 
     setIsThinking(true);
     const currentPrompt = inputText;
-    setMessages(prev => [...prev, { type: 'user', text: currentPrompt }]);
+    setMessages((prev) => [...prev, { type: 'user', text: currentPrompt }]);
     setInputText('');
 
     try {
@@ -236,11 +255,11 @@ export const App = () => {
         body: JSON.stringify({ prompt: currentPrompt, sessionId }),
       });
       const data = await res.json();
-      setMessages(prev => [...prev, { type: 'gemini', text: data.response }]);
+      setMessages((prev) => [...prev, { type: 'gemini', text: data.response }]);
       await loadCustomAnimations();
     } catch (error) {
-      console.error("Chat API error:", error);
-      setMessages(prev => [...prev, { type: 'gemini', text: 'Sorry, an error occurred.' }]);
+      console.error('Chat API error:', error);
+      setMessages((prev) => [...prev, { type: 'gemini', text: 'Sorry, an error occurred.' }]);
     } finally {
       setIsThinking(false);
     }
@@ -254,8 +273,12 @@ export const App = () => {
       body: JSON.stringify({ sessionId }),
     });
     setMessages([]);
-    try { localStorage.removeItem(`chat:${sessionId}`); } catch {}
-    try { localStorage.removeItem(`selectedAnim:${sessionId}`); } catch {}
+    try {
+      localStorage.removeItem(`chat:${sessionId}`);
+    } catch {}
+    try {
+      localStorage.removeItem(`selectedAnim:${sessionId}`);
+    } catch {}
     setAvailableAnimations(standardAnimations);
     setSelectedAnimationName(standardAnimations[0].animationName);
     lastCustomNamesRef.current = new Set();
@@ -263,13 +286,13 @@ export const App = () => {
   };
 
   const handleOpenPlayModal = () => {
-    const animClass = availableAnimations.find(a => a.animationName === selectedAnimationName);
+    const animClass = availableAnimations.find((a) => a.animationName === selectedAnimationName);
     if (!animClass) return;
 
     const spriteCount = animClass.getRequiredSpriteCount();
     if (spriteCount === 0) {
-        console.log("Animation requires 0 sprites, nothing to display.");
-        return;
+      console.warn('Animation requires 0 sprites, nothing to display.');
+      return;
     }
     setRequiredSpriteCount(spriteCount);
     setIsAssetModalOpen(true);
@@ -287,33 +310,41 @@ export const App = () => {
     }
 
     if (currentObjectRef.current) {
-        const prev = currentObjectRef.current;
-        // Safely remove from stage before destroy
-        try { if (prev.parent) prev.parent.removeChild(prev); } catch {}
-        try { prev.destroy({ children: true }); } catch { try { prev.destroy(); } catch {} }
-        currentObjectRef.current = null;
+      const prev = currentObjectRef.current;
+      // Safely remove from stage before destroy
+      try {
+        if (prev.parent) prev.parent.removeChild(prev);
+      } catch {}
+      try {
+        prev.destroy({ children: true });
+      } catch {
+        try {
+          prev.destroy();
+        } catch {}
+      }
+      currentObjectRef.current = null;
     }
 
-    const animClass = availableAnimations.find(a => a.animationName === selectedAnimationName);
+    const animClass = availableAnimations.find((a) => a.animationName === selectedAnimationName);
     if (!animClass) return;
 
-    const textures = await Promise.all(spriteUrls.map(url => PIXI.Assets.load(url)));
-    const sprites = textures.map(texture => new PIXI.Sprite(texture));
+    const textures = await Promise.all(spriteUrls.map((url) => PIXI.Assets.load(url)));
+    const sprites = textures.map((texture) => new PIXI.Sprite(texture));
 
     const obj = new BaseObject();
-    sprites.forEach(s => {
-        s.anchor.set(0.5);
-        obj.addChild(s);
+    sprites.forEach((s) => {
+      s.anchor.set(0.5);
+      obj.addChild(s);
     });
-  // Position at the center of the canvas
-  obj.x = app.renderer.width / 2;
-  obj.y = app.renderer.height / 2;
-  if (app.stage) {
-    app.stage.addChild(obj);
-  } else {
-    console.warn('PIXI Application stage is missing. Skipping addChild.');
-    return;
-  }
+    // Position at the center of the canvas
+    obj.x = app.renderer.width / 2;
+    obj.y = app.renderer.height / 2;
+    if (app.stage) {
+      app.stage.addChild(obj);
+    } else {
+      console.warn('PIXI Application stage is missing. Skipping addChild.');
+      return;
+    }
     currentObjectRef.current = obj;
 
     const anim = animationManager.create(selectedAnimationName, obj, sprites);
@@ -326,38 +357,49 @@ export const App = () => {
   };
 
   const handleDownload = async () => {
-    const isStandard = standardAnimations.some(a => a.animationName === selectedAnimationName);
+    const isStandard = standardAnimations.some((a) => a.animationName === selectedAnimationName);
     if (isStandard) {
-        alert("Cannot download standard, built-in animations.");
-        return;
+      alert('Cannot download standard, built-in animations.');
+      return;
     }
     try {
-        const res = await fetch(`/api/animation-code/${sessionId}/${selectedAnimationName}`);
-        if (!res.ok) throw new Error(`Failed to fetch code: ${res.statusText}`);
-        const code = await res.text();
+      const res = await fetch(`/api/animation-code/${sessionId}/${selectedAnimationName}`);
+      if (!res.ok) throw new Error(`Failed to fetch code: ${res.statusText}`);
+      const code = await res.text();
 
-        const blob = new Blob([code], { type: 'text/typescript' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${selectedAnimationName}.ts`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+      const blob = new Blob([code], { type: 'text/typescript' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${selectedAnimationName}.ts`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     } catch (error) {
-        console.error("Download failed:", error);
-        alert("Failed to download animation file.");
+      console.error('Download failed:', error);
+      alert('Failed to download animation file.');
     }
   };
 
   return (
-    <div style={{display:'flex', height:'100vh', fontFamily:'sans-serif'}}>
+    <div style={{ display: 'flex', height: '100vh', fontFamily: 'sans-serif' }}>
       {toast && (
-        <div style={{
-          position:'fixed', right:16, top:16, background:'#333', color:'#fff', padding:'10px 14px', borderRadius:6,
-          boxShadow:'0 2px 8px rgba(0,0,0,0.2)', zIndex:1000
-        }}>{toast}</div>
+        <div
+          style={{
+            position: 'fixed',
+            right: 16,
+            top: 16,
+            background: '#333',
+            color: '#fff',
+            padding: '10px 14px',
+            borderRadius: 6,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+            zIndex: 1000,
+          }}
+        >
+          {toast}
+        </div>
       )}
       <ChatPanel
         messages={messages}
