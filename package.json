@@ -59,6 +59,7 @@
     "dotenv": "*",
     "fastify": "*",
     "pixi.js": "^8.1.6",
+    "puppeteer": "^24.17.0",
     "react": "*",
     "react-dom": "*",
     "react-markdown": "^10.1.0",

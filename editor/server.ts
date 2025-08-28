@@ -12,6 +12,7 @@ import multipart from '@fastify/multipart';
 import path from 'path';
 import util from 'util';
 import { pipeline } from 'stream';
+import { verifyAnimation } from './simulation';
 
 const pump = util.promisify(pipeline);
 
@@ -20,6 +21,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 // Store sessions outside of editor/ to avoid dev server restarts on file writes
 const SESSIONS_DIR = resolve(__dirname, '../.sessions');
+const ANIMATIONS_DIR = resolve(__dirname, '../src/animations');
 // Path to sprite assets folder (served by Vite publicDir in editor/vite.config.ts)
 const ASSETS_SPRITE_DIR = resolve(__dirname, '../assets/sprite');
 
@@ -41,7 +43,12 @@ if (PROXY_URL) {
 
 // In-memory store for session chat histories.
 // In a real app, this would be a database.
-const sessions = new Map<string, any[]>();
+interface SessionData {
+  chatHistory: any[];
+  state: 'clarifying' | 'awaiting_confirmation' | 'generating';
+  originalPrompt?: string;
+}
+const sessions = new Map<string, SessionData>();
 
 // --- Gemini AI Configuration ---
 const API_KEY = process.env.GEMINI_API_KEY;
@@ -52,10 +59,7 @@ if (!API_KEY) {
   process.exit(1);
 }
 const genAI = new GoogleGenerativeAI(API_KEY);
-const model = genAI.getGenerativeModel({
-  model: GEMINI_MODEL,
-  // The system instruction is the core prompt for the AI
-  systemInstruction: `You are an expert TypeScript developer specializing in Pixi.js animations. Your task is to create a new animation class based on a user's description of the desired EFFECT. Implement it robustly in this project without pitfalls. Follow these exact rules so the file compiles and works in our editor:
+const BASE_SYSTEM_INSTRUCTION = `You are an expert TypeScript developer specializing in Pixi.js animations. Your task is to create a new animation class based on a user's description of the desired EFFECT. Implement it robustly in this project without pitfalls. Follow these exact rules so the file compiles and works in our editor:
 1) Imports:
    - Use: \`import * as PIXI from 'pixi.js'\`.
    - Use: \`import { BaseAnimate } from 'pixi-animation-library'\`.
@@ -139,8 +143,7 @@ Common pitfalls to avoid (must not do these):
 
 Important:
 - The user describes the EFFECT; implement it with the above engineering guardrails.
-- Be conversational and explain briefly what you created before calling the tool.`,
-});
+- Be conversational and explain briefly what you created before calling the tool.`;
 
 const generationConfig = {
   temperature: 0.9,
@@ -215,6 +218,48 @@ const tools: any = [
 
 // (Validation removed by user request)
 
+/**
+ * Creates a dynamic system instruction for the AI by injecting a list of existing
+ * animation names to avoid duplicates.
+ * @param sessionId The current user session ID.
+ * @returns A promise that resolves to the full system instruction string.
+ */
+async function createDynamicSystemInstruction(sessionId: string): Promise<string> {
+  let instruction = BASE_SYSTEM_INSTRUCTION;
+  const existingNames = new Set<string>();
+
+  // 1. Get built-in animations from src/animations
+  try {
+    const files = await fs.readdir(ANIMATIONS_DIR);
+    files
+      .filter((file) => file.endsWith('.ts'))
+      .forEach((file) => existingNames.add(file.replace(/\.ts$/, '')));
+  } catch (error) {
+    // Log the error but don't fail the request
+    console.error('Could not read built-in animations directory:', error);
+  }
+
+  // 2. Get session-specific animations created by the user
+  try {
+    const sessionAnimDir = resolve(SESSIONS_DIR, sessionId, 'animations');
+    await fs.access(sessionAnimDir); // Check if directory exists
+    const files = await fs.readdir(sessionAnimDir);
+    files
+      .filter((file) => file.endsWith('.ts'))
+      .forEach((file) => existingNames.add(file.replace(/\.ts$/, '')));
+  } catch (error) {
+    // This is not a critical error, the directory might not exist yet.
+  }
+
+  if (existingNames.size > 0) {
+    const namesList = Array.from(existingNames).join(', ');
+    const rule = `\n\nIMPORTANT: Do NOT use any of the following existing animation class names, as it will cause a compilation error: ${namesList}. You must invent a new, unique name for the class.`;
+    instruction += rule;
+  }
+
+  return instruction;
+}
+
 // --- Fastify Server ---
 async function main() {
   await fs.mkdir(SESSIONS_DIR, { recursive: true });
@@ -283,58 +328,177 @@ async function main() {
   server.post('/api/chat', async (request, reply) => {
     try {
       const body = request.body as any;
-      const _history = body?.history ?? [];
-      const { prompt } = body as { prompt: string };
+      const { prompt: userPrompt } = body as { prompt: string };
       let { sessionId } = body as { sessionId?: string };
 
+      // --- Session Management ---
       if (!sessionId) {
         sessionId = crypto.randomUUID();
-        sessions.set(sessionId, []);
+        sessions.set(sessionId, { chatHistory: [], state: 'clarifying' });
       } else if (!sessions.has(sessionId)) {
-        sessions.set(sessionId, []);
+        sessions.set(sessionId, { chatHistory: [], state: 'clarifying' });
       }
-      const chatHistory = sessions.get(sessionId)!;
+      const session = sessions.get(sessionId)!;
+
+      // --- State Machine for Conversation Flow ---
+      let systemInstruction = await createDynamicSystemInstruction(sessionId);
+      let finalPrompt = userPrompt;
+
+      if (session.state === 'clarifying') {
+        session.originalPrompt = userPrompt;
+        systemInstruction += `\n\n---
+IMPORTANT: Your first task is to understand and clarify the user's request for an animation.
+1. Analyze the user's prompt: "${userPrompt}".
+2. If details like duration, speed, or intensity are missing, propose sensible defaults (e.g., "a 2-second duration").
+3. Describe the animation you plan to create in plain text, listing all parameters.
+4. Conclude by asking the user to confirm if your understanding is correct before you proceed to write the code.
+5. Do NOT generate any TypeScript code or call any functions yet. Just send the text description for confirmation.`;
+        session.state = 'awaiting_confirmation';
+      } else if (session.state === 'awaiting_confirmation') {
+        const isConfirmation = /^(yes|correct|ok|go|yep|yeah|proceed|looks good)/i.test(
+          userPrompt,
+        );
+
+        if (isConfirmation) {
+          session.state = 'generating';
+          finalPrompt = `The user has confirmed the plan. Now, generate the TypeScript code for the following animation request: "${session.originalPrompt}". The user's confirmation message was: "${userPrompt}". Please now write the full code and call the 'create_animation_file' function.`;
+          // Use the original, full system instruction for code generation
+        } else {
+          // User provided a modification, stay in clarification loop
+          finalPrompt = `The user has provided feedback on your proposed animation plan. Their original request was: "${session.originalPrompt}". Your previous plan was based on this. Their new feedback is: "${userPrompt}". Please update your animation plan based on this feedback and present the new text description for confirmation. Do NOT write code yet.`;
+          // State remains 'awaiting_confirmation'
+        }
+      }
+      // If state is 'generating', we use the default flow with the dynamically generated prompt.
+
+      const model = genAI.getGenerativeModel({
+        model: GEMINI_MODEL,
+        systemInstruction,
+      });
 
       const chat = model.startChat({
-        history: chatHistory,
+        history: session.chatHistory,
         generationConfig,
         safetySettings,
         tools,
       });
 
-      const result = await chat.sendMessage(prompt);
+      const result = await chat.sendMessage(finalPrompt);
       const geminiResponse: any = result.response as any;
-
       let responseText = geminiResponse.text();
 
-      // Handle function calls (no validation)
-      const processCalls = async (resp: any) => {
-        const calls: any[] = resp.functionCalls?.() ?? [];
-        if (!calls.length) return resp.text();
-        let lastText = resp.text();
+      // --- Function Call Handling and Verification Loop ---
+      const processAndVerify = async (
+        initialResponse: any,
+        attempt = 1,
+      ): Promise<string> => {
+        const MAX_ATTEMPTS = 2; // Initial attempt + 1 correction
+        if (attempt > MAX_ATTEMPTS) {
+          return `I tried to fix the animation ${attempt - 1} times but failed. I will stop for now. Please try a different prompt.`;
+        }
+
+        const calls = initialResponse.functionCalls?.() ?? [];
+        if (!calls.length) {
+          return initialResponse.text() ?? '';
+        }
+
+        let responseText =
+          initialResponse.text() || 'OK, I will create the animation.';
+
         for (const call of calls) {
-          if (call.name !== 'create_animation_file' && call.name !== 'update_animation_file')
+          if (
+            call.name !== 'create_animation_file' &&
+            call.name !== 'update_animation_file'
+          )
             continue;
-          const { className, code } = call.args || {};
+
+          const { className, code } = call.args;
           if (!className || !code) continue;
 
-          // First write
-          const sessionDir = resolve(SESSIONS_DIR, sessionId, 'animations');
-          await fs.mkdir(sessionDir, { recursive: true });
-          const filePath = resolve(sessionDir, `${className}.ts`);
-          await fs.writeFile(filePath, code);
+          server.log.info(
+            `[Attempt ${attempt}] Verifying animation: ${className}`,
+          );
+          const result = await verifyAnimation(className, code);
 
-          server.log.info(`Animation file created: ${filePath}`);
-          lastText = `I have created the animation file \`${className}.ts\`. You can now select it from the dropdown to preview it.`;
+          if (result.success) {
+            server.log.info(
+              `[Attempt ${attempt}] Verification successful for ${className}. Writing file.`,
+            );
+            const sessionDir = resolve(SESSIONS_DIR, sessionId, 'animations');
+            await fs.mkdir(sessionDir, { recursive: true });
+            const filePath = resolve(sessionDir, `${className}.ts`);
+            await fs.writeFile(filePath, code);
+
+            responseText =
+              attempt > 1
+                ? `I found a bug in my first attempt, but I've fixed it. The new version of \`${className}.ts\` has been created and verified.`
+                : `I have created and verified the animation \`${className}.ts\`. You can now select it from the dropdown.`;
+            return responseText; // Success, exit the loop
+          }
+
+          // --- VERIFICATION FAILED ---
+          server.log.error(
+            `[Attempt ${attempt}] Verification FAILED for ${className}.`,
+            { errors: result.errors },
+          );
+
+          // This was the last attempt, return failure message
+          if (attempt >= MAX_ATTEMPTS) {
+            return `I tried to create an animation, but it failed verification. After a correction attempt, it failed again.
+Final errors:
+${result.errors.join('\n')}`;
+          }
+
+          // --- STARTING CORRECTION ATTEMPT ---
+          responseText = `My first attempt to create the animation failed. I will now try to fix it.`;
+          const correctionPrompt = `
+You are an expert TypeScript developer fixing a broken Pixi.js animation.
+The user's original request was: "${session.originalPrompt}"
+You generated the following TypeScript code for a class named "${className}", but it failed verification:
+--- BROKEN CODE START ---
+${code}
+--- BROKEN CODE END ---
+
+Here are the captured results from the verification environment:
+- Errors: ${result.errors.join('\n') || 'None'}
+- Animation Logs: ${result.spyLogs.join('\n') || 'None'}
+
+Your task is to analyze the code, errors, and logs to identify the bug.
+Then, provide the fully corrected code.
+Respond ONLY with a call to the \`update_animation_file\` function with the complete, fixed code for the class.
+`;
+
+          // Add user part of correction to history
+          session.chatHistory.push({
+            role: 'user',
+            parts: [{ text: correctionPrompt }],
+          });
+
+          const chat = model.startChat({
+            history: session.chatHistory,
+            generationConfig,
+            safetySettings,
+            tools,
+          });
+
+          const correctionResult = await chat.sendMessage(correctionPrompt);
+          const correctionResponse = correctionResult.response;
+
+          // Add model part of correction to history
+          session.chatHistory.push(correctionResponse.candidates[0].content);
+
+          // Recursively call this function for the next attempt
+          return processAndVerify(correctionResponse, attempt + 1);
         }
-        return lastText;
+        return responseText;
       };
 
-      responseText = await processCalls(geminiResponse);
+      responseText = await processAndVerify(geminiResponse);
 
-      // Update history in our session store
-      chatHistory.push({ role: 'user', parts: [{ text: prompt }] } as any);
-      chatHistory.push({ role: 'model', parts: [{ text: responseText }] } as any);
+      // --- Update History ---
+      session.chatHistory.push({ role: 'user', parts: [{ text: userPrompt }] });
+      // We need to store the full response from the model, including potential function calls
+      session.chatHistory.push(geminiResponse.candidates[0].content);
 
       reply.send({ response: responseText, sessionId });
     } catch (error) {
