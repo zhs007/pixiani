@@ -8,6 +8,7 @@ import {
     ComplexPopAnimation,
     FlagWaveAnimation,
     VortexAnimation,
+  BlackHoleSpiralAnimation,
     AnimateClass,
 } from 'pixi-animation-library';
 import { v4 as uuidv4 } from 'uuid';
@@ -17,7 +18,7 @@ import { PreviewPanel } from './PreviewPanel';
 import { AssetSelectionModal } from './AssetSelectionModal';
 
 // --- Constants & Initial Setup ---
-const standardAnimations: AnimateClass[] = [ScaleAnimation, FadeAnimation, ComplexPopAnimation, FlagWaveAnimation, VortexAnimation];
+const standardAnimations: AnimateClass[] = [ScaleAnimation, FadeAnimation, ComplexPopAnimation, FlagWaveAnimation, VortexAnimation, BlackHoleSpiralAnimation];
 
 // --- Main App Component ---
 export const App = () => {
@@ -139,7 +140,11 @@ export const App = () => {
     const container = pixiContainerRef.current;
     if (!container || pixiAppRef.current) return;
 
+    let disposed = false;
     const app = new PIXI.Application();
+    let ro: ResizeObserver | null = null;
+    const prevPosition = container.style.position;
+    let changedPosition = false;
 
     (async () => {
       const w = Math.max(1, container.clientWidth || 600);
@@ -151,6 +156,11 @@ export const App = () => {
         autoDensity: true,
         resolution: window.devicePixelRatio || 1,
       });
+      if (disposed) {
+        try { app.destroy(true, true); } catch {}
+        return;
+      }
+
       // Make canvas not affect layout height; fill container
       app.canvas.style.position = 'absolute';
       app.canvas.style.inset = '0';
@@ -158,15 +168,15 @@ export const App = () => {
       app.canvas.style.height = '100%';
 
       // Ensure container can host absolutely-positioned canvas
-      const prevPosition = container.style.position;
       if (!prevPosition || prevPosition === 'static') {
         container.style.position = 'relative';
+        changedPosition = true;
       }
 
       container.appendChild(app.canvas);
       pixiAppRef.current = app;
 
-      const ro = new ResizeObserver(() => {
+      ro = new ResizeObserver(() => {
         const nw = Math.max(1, container.clientWidth || w);
         const nh = Math.max(1, container.clientHeight || h);
         app.renderer.resize(nw, nh);
@@ -185,20 +195,28 @@ export const App = () => {
       const nw = Math.max(1, container.clientWidth || w);
       const nh = Math.max(1, container.clientHeight || h);
       app.renderer.resize(nw, nh);
-
-      // Cleanup part 1 for async init
-      return () => {
-        ro.disconnect();
-        if (prevPosition === '' || prevPosition === 'static') {
-          container.style.position = prevPosition || '';
-        }
-      };
     })();
 
-    // Cleanup part 2 for effect scope
+    // Cleanup for effect scope
     return () => {
+      disposed = true;
+      if (ro) {
+        try { ro.disconnect(); } catch {}
+        ro = null;
+      }
+      if (pixiAppRef.current === app) {
+        pixiAppRef.current = null;
+      }
       try { app.destroy(true, true); } catch {}
-      pixiAppRef.current = null;
+      // Remove canvas and restore container position
+      try {
+        if (app.canvas && app.canvas.parentElement === container) {
+          container.removeChild(app.canvas);
+        }
+      } catch {}
+      if (changedPosition) {
+        container.style.position = prevPosition || '';
+      }
     };
   }, [animationManager]);
 
@@ -260,9 +278,20 @@ export const App = () => {
   const handlePlayAnimation = async (spriteUrls: string[]) => {
     const app = pixiAppRef.current;
     if (!app || spriteUrls.length === 0) return;
+    // Ensure stage exists (avoid using a disposed Application)
+    if (!(app as any).stage) {
+      setToast('渲染器尚未就绪，请稍后重试');
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = window.setTimeout(() => setToast(null), 2000);
+      return;
+    }
 
     if (currentObjectRef.current) {
-        currentObjectRef.current.destroy();
+        const prev = currentObjectRef.current;
+        // Safely remove from stage before destroy
+        try { if (prev.parent) prev.parent.removeChild(prev); } catch {}
+        try { prev.destroy({ children: true }); } catch { try { prev.destroy(); } catch {} }
+        currentObjectRef.current = null;
     }
 
     const animClass = availableAnimations.find(a => a.animationName === selectedAnimationName);
@@ -279,7 +308,12 @@ export const App = () => {
   // Position at the center of the canvas
   obj.x = app.renderer.width / 2;
   obj.y = app.renderer.height / 2;
-  app.stage.addChild(obj);
+  if (app.stage) {
+    app.stage.addChild(obj);
+  } else {
+    console.warn('PIXI Application stage is missing. Skipping addChild.');
+    return;
+  }
     currentObjectRef.current = obj;
 
     const anim = animationManager.create(selectedAnimationName, obj, sprites);

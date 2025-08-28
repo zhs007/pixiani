@@ -17,3 +17,4 @@ export { FadeAnimation } from './animations/FadeAnimation';
 export { ComplexPopAnimation } from './animations/ComplexPopAnimation';
 export { FlagWaveAnimation } from './animations/FlagWaveAnimation';
 export { VortexAnimation } from './animations/VortexAnimation';
+export { BlackHoleSpiralAnimation } from './animations/BlackHoleSpiralAnimation';

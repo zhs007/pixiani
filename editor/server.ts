@@ -52,32 +52,56 @@ const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({
   model: GEMINI_MODEL,
   // The system instruction is the core prompt for the AI
-  systemInstruction: `You are an expert TypeScript developer specializing in Pixi.js animations. Your task is to create a new animation class based on a user's description. Follow these exact rules so the file compiles in our editor:
+  systemInstruction: `You are an expert TypeScript developer specializing in Pixi.js animations. Your task is to create a new animation class based on a user's description of the desired EFFECT. Implement it robustly in this project without pitfalls. Follow these exact rules so the file compiles and works in our editor:
 1) Imports:
    - Use: \`import * as PIXI from 'pixi.js'\`.
    - Use: \`import { BaseAnimate } from 'pixi-animation-library'\`.
    - Do NOT import from relative core paths like '../core/BaseAnimate'.
-2) Class:
+2) BaseAnimate contract (mandatory):
    - Export a single named class that \`extends BaseAnimate\`.
    - Include: \`public static readonly animationName: string\` (PascalCase, short).
    - Include: \`public static getRequiredSpriteCount(): number\` (>= 1 if sprites are used).
-   - Implement: \`public update(deltaTime: number): void\` with all animation logic.
-   - Avoid custom constructors unless absolutely necessary. If you add one, the signature MUST be \`constructor(object: any, sprites: PIXI.Sprite[])\` and MUST call \`super(object, sprites)\`.
-3) Runtime notes:
-   - Access sprites via \`this.sprites\`.
-   - The editor sets \`anchor.set(0.5)\` for each sprite and calls \`play()\` automatically.
+  - Implement EXACTLY: \`protected reset(): void\` (initialize/allocate state, set up meshes/containers, and prepare to start). Do not rename it.
+   - Implement: \`public update(deltaTime: number): void\` with all per-frame logic.
+   - Do NOT override \`play()\`, \`pause()\`, \`resume()\`, or \`setState()\`. Use the provided lifecycle.
+  - Do NOT call \`play()\` or \`setState()\` inside \`constructor\` or \`reset()\`. \`reset()\` must be side-effect free w.r.t. state; only allocate/initialize. Changing state in \`reset()\` causes infinite loops because \`BaseAnimate.play()\` calls \`reset()\`.
+  - If you override \`stop()\`, keep it minimal (e.g., restore sprite visibility, hide/destroy temporary nodes) and then call \`super.stop()\` OR explicitly set \`this.setState('IDLE')\`. Avoid side effects beyond cleanup.
+   - Access sprites via \`this.sprites\`. The editor sets \`anchor.set(0.5)\` and calls \`play()\` automatically.
    - Do NOT import any other libraries.
-4) File output:
+3) Mesh-specific best practices (if your effect involves mesh/vertex warping):
+   - Prefer \`new PIXI.MeshPlane({ texture, verticesX, verticesY })\` for evenly distributed grids.
+   - Do NOT rely on \`mesh.width/height\` for positioning/normalizing. Use geometry (\`aPosition\`) bounds instead.
+   - To align mesh with the original sprite:
+     - Copy transform: \`mesh.position/scale/rotation\` from the source sprite.
+     - Emulate anchor using pivot: \`mesh.pivot.set(minX + w*anchor.x, minY + h*anchor.y)\`.
+     - Hide the source sprite during play (\`sprite.visible = false\`), and restore visibility on \`stop()\`.
+   - Vertex updates:
+     - Read/write the \`aPosition\` buffer (Float32Array) and call \`buffer.update()\` each frame after modifying vertices.
+     - Compute and cache original vertices for baseline calculations.
+     - Normalize across geometry bounds (min/max) — not via transformed sizes.
+   - Performance:
+     - Choose a sensible grid (e.g., 32x32/64x64) unless the user explicitly asks for very dense meshes.
+     - Avoid per-vertex randomization unless the user asks for it.
+4) Control flow and lifecycle:
+   - Use \`this.state\` via \`play/pause/resume/stop\`. Set \`loop\` and \`speed\` only if needed.
+  - When the effect reaches its terminal state, call \`this.setState('ENDED')\` from \`update()\`. If \`loop\` is true, it will restart via \`play()\`.
+   - Keep public API surface minimal and avoid side effects beyond the passed sprites/object.
+  - Texture readiness: In \`reset()\`, guard against missing sprites or invalid textures. If \`!sprite || !sprite.texture?.valid\`, skip heavy setup and let \`update()\` early-return until ready. Do not change state from \`reset()\`.
+5) File output:
    - The file must export only that class.
    - After you output the code, you MUST call the \`create_animation_file\` function to save it (use the class name for the filename).
 
-Examples of valid animations (concise):
+Examples of valid animations (concise and correct w.r.t. BaseAnimate):
 // Example A: Single-sprite bounce scale
 export class BounceScale extends BaseAnimate {
   public static readonly animationName = 'BounceScale';
   public static getRequiredSpriteCount(): number { return 1; }
   private t = 0;
-  update(dt: number): void {
+  protected reset(): void {
+    this.t = 0;
+  }
+  public update(dt: number): void {
+    if (!this.isPlaying) return;
     this.t += dt;
     const s = 0.75 + Math.sin(this.t * Math.PI * 2) * 0.25; // 0.5..1.0
     this.sprites[0].scale.set(s);
@@ -89,7 +113,11 @@ export class TwinOrbit extends BaseAnimate {
   public static readonly animationName = 'TwinOrbit';
   public static getRequiredSpriteCount(): number { return 2; }
   private t = 0;
-  update(dt: number): void {
+  protected reset(): void {
+    this.t = 0;
+  }
+  public update(dt: number): void {
+    if (!this.isPlaying) return;
     this.t += dt;
     const r = 50;
     this.sprites[0].x = Math.cos(this.t) * r;
@@ -99,7 +127,16 @@ export class TwinOrbit extends BaseAnimate {
   }
 }
 
-Be conversational and explain briefly what you created before calling the tool.`,
+Common pitfalls to avoid (must not do these):
+- Missing \`protected reset(): void\` (required by BaseAnimate). Do not rename to init/start/setup.
+- Overriding \`play()\` or calling \`reset()\` manually from update — let BaseAnimate manage lifecycle.
+- Using \`mesh.width/height\` to normalize vertices — use geometry bounds from \`aPosition\`.
+
+\n*** End Patch
+
+Important:
+- The user describes the EFFECT; implement it with the above engineering guardrails.
+- Be conversational and explain briefly what you created before calling the tool.`,
 });
 
 const generationConfig = {
@@ -132,9 +169,23 @@ const tools: any = [
           required: ['className', 'code'],
         },
       },
+      {
+        name: 'update_animation_file',
+        description: 'Updates an existing TypeScript animation file with new code (same class name).',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            className: { type: 'STRING', description: 'The name of the animation class to update (PascalCase).' },
+            code: { type: 'STRING', description: 'The full, updated TypeScript code for the animation class.' },
+          },
+          required: ['className', 'code'],
+        },
+      },
     ],
   },
 ];
+
+// (Validation removed by user request)
 
 // --- Fastify Server ---
 async function main() {
@@ -226,24 +277,31 @@ async function main() {
 
       let responseText = geminiResponse.text();
 
-      // Handle function calls
-      const calls: any[] = geminiResponse.functionCalls?.() ?? [];
-      if (calls.length) {
+  // Handle function calls (no validation)
+  const processCalls = async (resp: any) => {
+        const calls: any[] = resp.functionCalls?.() ?? [];
+        if (!calls.length) return resp.text();
+        let lastText = resp.text();
         for (const call of calls) {
-          if (call.name === 'create_animation_file') {
-            const { className, code } = call.args || {};
-            const sessionDir = resolve(SESSIONS_DIR, sessionId, 'animations');
-            await fs.mkdir(sessionDir, { recursive: true });
-            const filePath = resolve(sessionDir, `${className}.ts`);
-            await fs.writeFile(filePath, code);
+          if (call.name !== 'create_animation_file' && call.name !== 'update_animation_file') continue;
+          let { className, code } = call.args || {};
+          if (!className || !code) continue;
 
-            console.log(`Animation file created: ${filePath}`);
-            responseText = `I have created the animation file \`${className}.ts\`. You can now select it from the dropdown to preview it.`;
-          }
+          // First write
+          const sessionDir = resolve(SESSIONS_DIR, sessionId, 'animations');
+          await fs.mkdir(sessionDir, { recursive: true });
+          let filePath = resolve(sessionDir, `${className}.ts`);
+          await fs.writeFile(filePath, code);
+
+          console.log(`Animation file created: ${filePath}`);
+          lastText = `I have created the animation file \`${className}.ts\`. You can now select it from the dropdown to preview it.`;
         }
-      }
+        return lastText;
+      };
 
-      // Update history in our session store
+  responseText = await processCalls(geminiResponse);
+
+  // Update history in our session store
   chatHistory.push({ role: 'user', parts: [{ text: prompt }] } as any);
   chatHistory.push({ role: 'model', parts: [{ text: responseText }] } as any);
 
