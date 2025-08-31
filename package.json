@@ -6,6 +6,7 @@
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "scripts": {
+    "_dev:editor:docs": "LOG_LEVEL can be set to 'info', 'warn', 'error', 'debug', 'fatal', or 'gemini'. Example: LOG_LEVEL=gemini npm run dev:editor",
     "dev": "vite --config demo/vite.config.ts",
     "dev:editor": "tsx watch editor/server.ts",
     "build": "npm run build:lib && npm run build:demo",
@@ -42,6 +43,7 @@
     "husky": "^9.1.6",
     "jsdom": "^26.1.0",
     "lint-staged": "^15.2.9",
+    "pino-pretty": "^13.1.1",
     "prettier": "^3.3.3",
     "tsx": "*",
     "typescript": "^5.4.5",

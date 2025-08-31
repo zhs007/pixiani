@@ -11,10 +11,38 @@ import crypto from 'crypto';
 import multipart from '@fastify/multipart';
 import path from 'path';
 import util from 'util';
+import pino from 'pino';
 import { pipeline } from 'stream';
 import { verifyAnimation } from './simulation';
 
 const pump = util.promisify(pipeline);
+
+const isDev = process.env.NODE_ENV !== 'production';
+const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
+
+const loggerConfig: any = {
+  level: LOG_LEVEL,
+  customLevels: {
+    gemini: 35,
+  },
+};
+
+if (isDev) {
+  loggerConfig.transport = {
+    target: 'pino-pretty',
+    options: {
+      colorize: true,
+      levelFirst: true,
+      translateTime: 'SYS:HH:MM:ss',
+      ignore: 'pid,hostname',
+      customColors: 'gemini:magenta',
+    },
+  };
+}
+
+// Create a temporary logger for startup messages before Fastify initializes its own
+const startupLogger = pino(loggerConfig);
+
 
 // --- Setup ---
 const __filename = fileURLToPath(import.meta.url);
@@ -35,9 +63,9 @@ const PROXY_URL =
 if (PROXY_URL) {
   try {
     setGlobalDispatcher(new ProxyAgent(PROXY_URL));
-    console.warn(`[editor] Using proxy: ${PROXY_URL}`);
-  } catch (e) {
-    console.warn('[editor] Failed to set proxy agent:', e);
+    startupLogger.warn(`Using proxy: ${PROXY_URL}`);
+  } catch (e: any) {
+    startupLogger.warn(e, 'Failed to set proxy agent');
   }
 }
 
@@ -55,7 +83,7 @@ const API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 
 if (!API_KEY) {
-  console.error('FATAL: GEMINI_API_KEY environment variable is not set.');
+  startupLogger.fatal('FATAL: GEMINI_API_KEY environment variable is not set.');
   process.exit(1);
 }
 const genAI = new GoogleGenerativeAI(API_KEY);
@@ -222,9 +250,10 @@ const tools: any = [
  * Creates a dynamic system instruction for the AI by injecting a list of existing
  * animation names to avoid duplicates.
  * @param sessionId The current user session ID.
+ * @param server The Fastify server instance for logging.
  * @returns A promise that resolves to the full system instruction string.
  */
-async function createDynamicSystemInstruction(sessionId: string): Promise<string> {
+async function createDynamicSystemInstruction(sessionId: string, server: any): Promise<string> {
   let instruction = BASE_SYSTEM_INSTRUCTION;
   const existingNames = new Set<string>();
 
@@ -236,7 +265,7 @@ async function createDynamicSystemInstruction(sessionId: string): Promise<string
       .forEach((file) => existingNames.add(file.replace(/\.ts$/, '')));
   } catch (error) {
     // Log the error but don't fail the request
-    console.error('Could not read built-in animations directory:', error);
+    server.log.warn(error, 'Could not read built-in animations directory');
   }
 
   // 2. Get session-specific animations created by the user
@@ -249,12 +278,14 @@ async function createDynamicSystemInstruction(sessionId: string): Promise<string
       .forEach((file) => existingNames.add(file.replace(/\.ts$/, '')));
   } catch (error) {
     // This is not a critical error, the directory might not exist yet.
+    server.log.debug({ sessionId }, 'No session animations directory found.');
   }
 
   if (existingNames.size > 0) {
     const namesList = Array.from(existingNames).join(', ');
     const rule = `\n\nIMPORTANT: Do NOT use any of the following existing animation class names, as it will cause a compilation error: ${namesList}. You must invent a new, unique name for the class.`;
     instruction += rule;
+    server.log.debug({ count: existingNames.size }, 'Injected existing animation names into prompt.');
   }
 
   return instruction;
@@ -263,7 +294,7 @@ async function createDynamicSystemInstruction(sessionId: string): Promise<string
 // --- Fastify Server ---
 async function main() {
   await fs.mkdir(SESSIONS_DIR, { recursive: true });
-  const server = Fastify({ logger: true });
+  const server = Fastify({ logger: loggerConfig });
 
   // Register multipart handler
   server.register(multipart);
@@ -335,13 +366,16 @@ async function main() {
       if (!sessionId) {
         sessionId = crypto.randomUUID();
         sessions.set(sessionId, { chatHistory: [], state: 'clarifying' });
+        logger.info({ sessionId }, 'New session created.');
       } else if (!sessions.has(sessionId)) {
         sessions.set(sessionId, { chatHistory: [], state: 'clarifying' });
+        logger.info({ sessionId }, 'Session re-created (was not in memory).');
       }
       const session = sessions.get(sessionId)!;
+      logger.debug({ sessionId, state: session.state }, 'Handling chat request.');
 
       // --- State Machine for Conversation Flow ---
-      let systemInstruction = await createDynamicSystemInstruction(sessionId);
+      let systemInstruction = await createDynamicSystemInstruction(sessionId, server);
       let finalPrompt = userPrompt;
 
       if (session.state === 'clarifying') {
@@ -354,6 +388,7 @@ IMPORTANT: Your first task is to understand and clarify the user's request for a
 4. Conclude by asking the user to confirm if your understanding is correct before you proceed to write the code.
 5. Do NOT generate any TypeScript code or call any functions yet. Just send the text description for confirmation.`;
         session.state = 'awaiting_confirmation';
+        logger.debug({ sessionId }, 'Moved session to "awaiting_confirmation" state.');
       } else if (session.state === 'awaiting_confirmation') {
         const isConfirmation = /^(yes|correct|ok|go|yep|yeah|proceed|looks good)/i.test(
           userPrompt,
@@ -362,10 +397,12 @@ IMPORTANT: Your first task is to understand and clarify the user's request for a
         if (isConfirmation) {
           session.state = 'generating';
           finalPrompt = `The user has confirmed the plan. Now, generate the TypeScript code for the following animation request: "${session.originalPrompt}". The user's confirmation message was: "${userPrompt}". Please now write the full code and call the 'create_animation_file' function.`;
+          logger.debug({ sessionId }, 'User confirmed, moved session to "generating" state.');
           // Use the original, full system instruction for code generation
         } else {
           // User provided a modification, stay in clarification loop
           finalPrompt = `The user has provided feedback on your proposed animation plan. Their original request was: "${session.originalPrompt}". Your previous plan was based on this. Their new feedback is: "${userPrompt}". Please update your animation plan based on this feedback and present the new text description for confirmation. Do NOT write code yet.`;
+          logger.debug({ sessionId }, 'User provided feedback, staying in "awaiting_confirmation" state.');
           // State remains 'awaiting_confirmation'
         }
       }
@@ -383,8 +420,10 @@ IMPORTANT: Your first task is to understand and clarify the user's request for a
         tools,
       });
 
+      logger.gemini({ sessionId, prompt: finalPrompt }, 'Sending message to Gemini...');
       const result = await chat.sendMessage(finalPrompt);
       const geminiResponse: any = result.response as any;
+      logger.gemini({ sessionId }, 'Received response from Gemini.');
       let responseText = geminiResponse.text();
 
       // --- Function Call Handling and Verification Loop ---
@@ -394,13 +433,20 @@ IMPORTANT: Your first task is to understand and clarify the user's request for a
       ): Promise<string> => {
         const MAX_ATTEMPTS = 2; // Initial attempt + 1 correction
         if (attempt > MAX_ATTEMPTS) {
+          logger.error({ sessionId }, `Exceeded max verification attempts.`);
           return `I tried to fix the animation ${attempt - 1} times but failed. I will stop for now. Please try a different prompt.`;
         }
 
         const calls = initialResponse.functionCalls?.() ?? [];
         if (!calls.length) {
+          logger.debug({ sessionId }, 'Gemini response has no function calls.');
           return initialResponse.text() ?? '';
         }
+
+        logger.gemini(
+          { sessionId, calls: calls.map((c: any) => c.name) },
+          'Gemini response includes function calls.',
+        );
 
         let responseText =
           initialResponse.text() || 'OK, I will create the animation.';
@@ -415,14 +461,16 @@ IMPORTANT: Your first task is to understand and clarify the user's request for a
           const { className, code } = call.args;
           if (!className || !code) continue;
 
-          server.log.info(
-            `[Attempt ${attempt}] Verifying animation: ${className}`,
+          logger.info(
+            { sessionId, className, attempt },
+            `Verifying animation: ${className}`,
           );
           const result = await verifyAnimation(className, code);
 
           if (result.success) {
-            server.log.info(
-              `[Attempt ${attempt}] Verification successful for ${className}. Writing file.`,
+            logger.info(
+              { sessionId, className, attempt },
+              `Verification successful for ${className}. Writing file.`,
             );
             const sessionDir = resolve(SESSIONS_DIR, sessionId, 'animations');
             await fs.mkdir(sessionDir, { recursive: true });
@@ -437,9 +485,9 @@ IMPORTANT: Your first task is to understand and clarify the user's request for a
           }
 
           // --- VERIFICATION FAILED ---
-          server.log.error(
-            `[Attempt ${attempt}] Verification FAILED for ${className}.`,
-            { errors: result.errors },
+          logger.error(
+            { sessionId, className, attempt, errors: result.errors },
+            `Verification FAILED for ${className}.`,
           );
 
           // This was the last attempt, return failure message
@@ -481,8 +529,16 @@ Respond ONLY with a call to the \`update_animation_file\` function with the comp
             tools,
           });
 
+          logger.gemini(
+            { sessionId, className, attempt: attempt + 1 },
+            'Sending correction prompt to Gemini...',
+          );
           const correctionResult = await chat.sendMessage(correctionPrompt);
           const correctionResponse = correctionResult.response;
+          logger.gemini(
+            { sessionId, className, attempt: attempt + 1 },
+            'Received correction response from Gemini.',
+          );
 
           // Add model part of correction to history
           session.chatHistory.push(correctionResponse.candidates[0].content);
@@ -499,10 +555,11 @@ Respond ONLY with a call to the \`update_animation_file\` function with the comp
       session.chatHistory.push({ role: 'user', parts: [{ text: userPrompt }] });
       // We need to store the full response from the model, including potential function calls
       session.chatHistory.push(geminiResponse.candidates[0].content);
+      logger.debug({ sessionId }, 'Updated chat history.');
 
       reply.send({ response: responseText, sessionId });
     } catch (error) {
-      server.log.error(error, 'Error processing chat request');
+      logger.error(error, 'Error processing chat request');
       reply.status(500).send({ error: 'Failed to process chat request' });
     }
   });
@@ -511,7 +568,7 @@ Respond ONLY with a call to the \`update_animation_file\` function with the comp
     const { sessionId } = request.body as any;
     if (sessionId && sessions.has(sessionId)) {
       sessions.set(sessionId, []);
-      server.log.info(`Cleared session for ${sessionId}`);
+      logger.info({ sessionId }, `Cleared session`);
     }
     return { success: true };
   });
