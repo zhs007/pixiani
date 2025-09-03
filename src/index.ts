@@ -18,3 +18,6 @@ export { ComplexPopAnimation } from './animations/ComplexPopAnimation';
 export { FlagWaveAnimation } from './animations/FlagWaveAnimation';
 export { VortexAnimation } from './animations/VortexAnimation';
 export { BlackHoleSpiralAnimation } from './animations/BlackHoleSpiralAnimation';
+export { ParticleSpinAnimation } from './animations/ParticleSpinAnimation';
+export { CoinV2Animation } from './animations/CoinV2Animation';
+export { StairBounceAnimation } from './animations/StairBounceAnimation';

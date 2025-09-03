@@ -39,11 +39,11 @@ export default [
       vitest,
     },
     rules: {
-  'no-console': ['error', { allow: ['warn', 'error'] }],
+      'no-console': ['error', { allow: ['warn', 'error'] }],
       'prefer-const': 'warn',
       'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
-  'unused-imports/no-unused-imports': 'error',
+      'unused-imports/no-unused-imports': 'error',
       'unused-imports/no-unused-vars': [
         'warn',
         { vars: 'all', varsIgnorePattern: '^_', args: 'after-used', argsIgnorePattern: '^_' },
@@ -62,8 +62,8 @@ export default [
     },
     rules: {
       'no-undef': 'off',
-  'unused-imports/no-unused-imports': 'error',
-  'no-empty': ['error', { allowEmptyCatch: true }],
+      'unused-imports/no-unused-imports': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
     },
   },
   {
@@ -77,8 +77,8 @@ export default [
     languageOptions: { globals: { ...globals.node } },
     rules: {
       'no-undef': 'off',
-  'unused-imports/no-unused-imports': 'error',
-  'no-empty': ['error', { allowEmptyCatch: true }],
+      'unused-imports/no-unused-imports': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
     },
   },
   {

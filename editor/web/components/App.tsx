@@ -9,7 +9,10 @@ import {
   FlagWaveAnimation,
   VortexAnimation,
   BlackHoleSpiralAnimation,
+  ParticleSpinAnimation,
+  CoinV2Animation,
   AnimateClass,
+  StairBounceAnimation,
 } from 'pixi-animation-library';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -25,6 +28,9 @@ const standardAnimations: AnimateClass[] = [
   FlagWaveAnimation,
   VortexAnimation,
   BlackHoleSpiralAnimation,
+  ParticleSpinAnimation,
+  CoinV2Animation,
+  StairBounceAnimation,
 ];
 
 // --- Main App Component ---
