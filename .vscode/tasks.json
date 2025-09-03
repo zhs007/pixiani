@@ -1,0 +1,11 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build:tsc-check",
+      "type": "shell",
+      "command": "npm run -s -q -w . -c \"echo -n > /dev/null\"",
+      "group": "build"
+    }
+  ]
+}

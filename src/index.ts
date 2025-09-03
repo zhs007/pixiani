@@ -21,3 +21,4 @@ export { BlackHoleSpiralAnimation } from './animations/BlackHoleSpiralAnimation'
 export { ParticleSpinAnimation } from './animations/ParticleSpinAnimation';
 export { CoinV2Animation } from './animations/CoinV2Animation';
 export { StairBounceAnimation } from './animations/StairBounceAnimation';
+export { ArcBounce3sAnimation } from './animations/ArcBounce3sAnimation';

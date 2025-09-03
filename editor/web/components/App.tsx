@@ -13,6 +13,7 @@ import {
   CoinV2Animation,
   AnimateClass,
   StairBounceAnimation,
+  ArcBounce3sAnimation,
 } from 'pixi-animation-library';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -31,6 +32,7 @@ const standardAnimations: AnimateClass[] = [
   ParticleSpinAnimation,
   CoinV2Animation,
   StairBounceAnimation,
+  ArcBounce3sAnimation,
 ];
 
 // --- Main App Component ---
