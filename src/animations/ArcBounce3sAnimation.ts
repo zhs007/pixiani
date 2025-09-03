@@ -16,11 +16,17 @@ import * as PIXI from 'pixi.js';
 export class ArcBounce3sAnimation extends BaseAnimate {
   public static readonly animationName: string = 'ArcBounce3s';
   public static getRequiredSpriteCount(): number {
-    return 1;
+    return 9;
   }
 
   private readonly DURATION = 3.0; // seconds at speed=1
   private elapsed = 0;
+
+  // Frame animation: 9 frames looped every 0.3s
+  private readonly FRAME_LOOP = 0.3;
+  private readonly FRAME_COUNT = 9;
+  private readonly FRAME_DT = 0.3 / 9; // computed statically to avoid TS ordering issues
+  private currentFrame = 0;
 
   // Cached motion plan computed on reset using current screen size
   private x0 = 0; // start/drop x
@@ -40,37 +46,49 @@ export class ArcBounce3sAnimation extends BaseAnimate {
   private readonly T2 = 0.8; // g2 -> g3 (arc)
   private readonly T3 = 0.4; // g3 -> off-screen (drop)
 
-  private get sprite(): PIXI.Sprite {
-    return this.sprites[0];
+  private getFrameSprite(idx: number): PIXI.Sprite {
+    return this.sprites[idx];
   }
 
   protected reset(): void {
     this.elapsed = 0;
+    this.currentFrame = 0;
 
-    const sp = this.sprite as any;
-    // Ensure centered and visible
-    try {
-      sp.anchor?.set?.(0.5);
-    } catch {}
-    this.sprite.alpha = 1;
-    // Normalize scale and then fit to view if needed
-    this.sprite.scale.set(1, 1);
+    // Prepare all frame sprites: center anchors and normalize scale
+    for (let i = 0; i < this.FRAME_COUNT; i++) {
+      const sp = this.getFrameSprite(i) as any;
+      try {
+        sp.anchor?.set?.(0.5);
+      } catch {}
+      sp.alpha = 1;
+      sp.visible = i === 0; // only first frame visible initially
+      try {
+        sp.scale.set(1, 1);
+      } catch {}
+    }
 
     const W = this.getScreenWidth();
     const H = this.getScreenHeight();
     const minSide = Math.max(1, Math.min(W, H));
-    const maxSprite = Math.max(1, Math.max(this.sprite.width, this.sprite.height));
+    // Use first frame as representative for sizing
+    const rep = this.getFrameSprite(0);
+    const maxSprite = Math.max(1, Math.max(rep.width, rep.height));
     const targetSize = minSide * 0.12; // keep sprite about 12% of the shorter side
     if (maxSprite > 0) {
       const k = Math.min(1, targetSize / maxSprite);
-      this.sprite.scale.set(k, k);
+      // apply same scale to all frames to keep them aligned
+      for (let i = 0; i < this.FRAME_COUNT; i++) {
+        try {
+          this.getFrameSprite(i).scale.set(k, k);
+        } catch {}
+      }
     }
 
     // Re-evaluate after scaling
     const margin = Math.max(16, minSide * 0.02);
     const halfW = W * 0.5;
     const halfH = H * 0.5;
-    const spH = Math.max(1, this.sprite.height);
+    const spH = Math.max(1, rep.height);
 
     // Start near left side, a little inwards
     this.x0 = -halfW * 0.25;
@@ -96,7 +114,20 @@ export class ArcBounce3sAnimation extends BaseAnimate {
     this.elapsed += deltaTime * this.speed;
 
     const t = this.elapsed;
-    const S = this.sprite as any;
+    // frame selection (looped every FRAME_LOOP)
+    const frameTime = ((t % this.FRAME_LOOP) + this.FRAME_LOOP) % this.FRAME_LOOP; // safe modulo
+    const nextFrame = Math.floor(frameTime / this.FRAME_DT) % this.FRAME_COUNT;
+    if (nextFrame !== this.currentFrame) {
+      try {
+        this.getFrameSprite(this.currentFrame).visible = false;
+      } catch {}
+      try {
+        this.getFrameSprite(nextFrame).visible = true;
+      } catch {}
+      this.currentFrame = nextFrame;
+    }
+
+    const S = this.getFrameSprite(this.currentFrame) as any;
 
     // Piecewise segments
     if (t <= this.T0) {
@@ -144,7 +175,7 @@ export class ArcBounce3sAnimation extends BaseAnimate {
       const tb = t - (this.T0 + this.T1 + this.T2);
       const u = Math.max(0, Math.min(1, tb / this.T3));
       const H = this.getScreenHeight();
-      const yEnd = H * 0.5 + this.sprite.height * 0.8;
+      const yEnd = H * 0.5 + this.getFrameSprite(0).height * 0.8;
       const y = this.g3 + (yEnd - this.g3) * (u * u); // ease-in
       const x = this.lerp(this.x2, this.xOut, u);
       S.x = x;
@@ -161,7 +192,9 @@ export class ArcBounce3sAnimation extends BaseAnimate {
   public stop(): void {
     super.stop();
     // Ensure visible in original place if reused
-    this.sprite.alpha = 1;
+    try {
+      this.getFrameSprite(0).alpha = 1;
+    } catch {}
   }
 
   private lerp(a: number, b: number, t: number): number {
