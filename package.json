@@ -20,7 +20,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:editor": "tsc -p editor/tsconfig.json --noEmit",
     "typecheck:all": "npm run -s typecheck && npm run -s typecheck:editor",
-  "ci": "npm run -s lint && npm run -s format:check && npm run -s typecheck:all && npm run -s test"
+    "ci": "npm run -s lint && npm run -s format:check && npm run -s typecheck:all && npm run -s test"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
@@ -39,7 +39,6 @@
     "eslint-plugin-vitest": "^0.5.4",
     "globals": "^16.3.0",
     "jsdom": "^26.1.0",
-    "lint-staged": "^15.2.9",
     "prettier": "^3.3.3",
     "tsx": "*",
     "typescript": "^5.4.5",
@@ -65,14 +64,6 @@
   },
   "files": [
     "dist"
-  ],
-  "lint-staged": {
-    "*.{js,jsx,ts,tsx}": [
-      "eslint --fix --max-warnings=0",
-      "prettier --write"
-    ],
-    "*.{json,md,yml,yaml,css,scss,html}": [
-      "prettier --write"
-    ]
-  }
+  ]
+
 }
