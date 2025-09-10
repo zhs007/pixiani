@@ -14,6 +14,7 @@ import {
   AnimateClass,
   StairBounceAnimation,
   ArcBounce3sAnimation,
+  ScaleRotateScale,
 } from 'pixi-animation-library';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -33,6 +34,7 @@ const standardAnimations: AnimateClass[] = [
   CoinV2Animation,
   StairBounceAnimation,
   ArcBounce3sAnimation,
+  ScaleRotateScale,
 ];
 
 // --- Main App Component ---

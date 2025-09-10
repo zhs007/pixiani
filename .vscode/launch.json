@@ -1,0 +1,31 @@
+{
+  "version": "0.2.0",
+  "compounds": [
+    {
+      "name": "Start Editor + Chrome",
+      "configurations": ["Launch Chrome against Editor", "Attach to Editor Node"]
+    }
+  ],
+  "configurations": [
+    {
+      "name": "Attach to Editor Node",
+      "type": "node",
+      "request": "attach",
+      "port": 9229,
+      "restart": true,
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "Launch Chrome against Editor",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:3000",
+      "webRoot": "${workspaceFolder}",
+      "runtimeArgs": [
+        "--remote-debugging-port=9222",
+        "--user-data-dir=${workspaceFolder}/.vscode/chrome-debug-profile"
+      ],
+      "sourceMaps": true
+    }
+  ]
+}

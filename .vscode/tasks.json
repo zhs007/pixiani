@@ -2,10 +2,33 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Start Editor Server",
+      "type": "shell",
+      "command": "npm run dev:editor",
+      "problemMatcher": {
+        "owner": "custom",
+        "pattern": {
+          "regexp": "Server listening",
+          "file": 1,
+          "line": 1,
+          "column": 1
+        }
+      },
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
       "label": "build:tsc-check",
       "type": "shell",
-      "command": "npm run -s -q -w . -c \"echo -n > /dev/null\"",
-      "group": "build"
+      "command": "npm run -s typecheck:all",
+      "group": "build",
+      "presentation": {
+        "reveal": "silent",
+        "panel": "dedicated"
+      }
     }
   ]
 }
