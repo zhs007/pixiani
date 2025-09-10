@@ -20,8 +20,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:editor": "tsc -p editor/tsconfig.json --noEmit",
     "typecheck:all": "npm run -s typecheck && npm run -s typecheck:editor",
-    "ci": "npm run -s lint && npm run -s format:check && npm run -s typecheck:all && npm run -s test",
-    "prepare": "husky"
+  "ci": "npm run -s lint && npm run -s format:check && npm run -s typecheck:all && npm run -s test"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
