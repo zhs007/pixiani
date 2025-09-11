@@ -91,7 +91,7 @@
     a. **分析与探索**: Agent 调用 `get_allowed_files` 和 `read_file` 工具来学习现有代码。
     b. **编写代码**: Agent 使用 `create_animation_file` 工具生成动画类。
     c. **编写测试**: Agent 使用 `create_test_file` 为新动画编写 Vitest 测试。
-    d. **测试与调试**: Agent 调用 `run_tests` 执行测试。该测试运行在一个正确配置的环境中，能够识别并执行沙箱 (`.sessions`) 内的测试文件。
+    d. **测试与调试**: Agent 调用 `run_tests` 执行测试。该测试运行在一个正确配置的环境中：`vitest`被显式配置为加载项目的路径别名（如`pixi-animation-library`），并被配置为能够发现和执行沙箱 (`.sessions`) 内的测试文件。
     e. **错误处理**: 如果测试因代码错误而失败，Agent 会收到错误报告并尝试修复。如果测试因无法解决的**环境问题**而失败（例如，测试工具本身出现故障），Agent 会识别出这种 `SYSTEM_ERROR`，立即停止工作流程，并向用户报告该环境问题。
 3.  **完成**: 一旦测试通过，Agent 会向前端发送最终的成功消息和一个 `workflow_complete` 事件，其中包含新动画的类名。
 4.  **沙箱环境**: 所有文件操作和测试都在一个与用户会话绑定的沙箱环境 (`.sessions/<session-id>`) 中进行，以确保项目源代码的安全。
