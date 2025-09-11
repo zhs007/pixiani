@@ -61,9 +61,8 @@ const model = genAI.getGenerativeModel({
 4.  **Write a Test:** Create a comprehensive test file for your new animation using Vitest. The test should cover the animation's lifecycle, state changes, and visual properties. Call \`create_test_file(className, code)\` to save it.
 5.  **Run Tests:** Execute \`run_tests(className)\` to validate your implementation.
 6.  **Debug and Refine:**
-    *   If the tests fail, the tool will return the error output.
-    *   Analyze the errors and use \`update_animation_file()\` or \`update_test_file()\` to fix the code.
-    *   Repeat the \`run_tests()\` and update cycle until all tests pass.
+    *   If the tests fail with a normal error, the tool will return the error output. Analyze the errors and use \`update_animation_file()\` or \`update_test_file()\` to fix the code. Repeat the \`run_tests()\` and update cycle until all tests pass.
+    *   If \`run_tests()\` returns a message starting with \`SYSTEM_ERROR:\`, it means there is a problem with the testing environment itself. **Do not try to fix this.** Your task is finished. Report the system error to the user as your final answer.
 7.  **Completion:** Once \`run_tests()\` returns a success message, the task is complete. Inform the user that the animation has been created and tested successfully.
 
 **Strict Rules for Animation Code:**
@@ -297,24 +296,35 @@ function run_tests(sessionId: string, className: string): Promise<string> {
       'animations',
       `${className}.test.ts`,
     );
-    // The test file imports from 'pixi-animation-library/...'
-    // The vitest.config.ts in the root of the project defines this alias.
-    // We need to run vitest from the root for it to pick up the config.
     const command = `npx vitest run "${testFilePath}" --root "${ROOT_DIR}"`;
 
     exec(command, (error, stdout, stderr) => {
+      const combinedOutput = stdout + stderr;
+      // Detect a specific, unrecoverable environment error
+      if (combinedOutput.includes('No test files found')) {
+        promiseResolve(
+          'SYSTEM_ERROR: Test runner could not find the test file. This is an environment issue. Do not attempt to fix this by modifying code. Stop and report the issue.',
+        );
+        return;
+      }
+
+      // Handle regular test failures
       if (error) {
         promiseResolve(
           `Tests failed for ${className}:\n\nSTDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`,
         );
         return;
       }
+
+      // Handle tests that pass but have warnings
       if (stderr) {
         promiseResolve(
           `Tests completed for ${className} (with warnings):\n\nSTDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`,
         );
         return;
       }
+
+      // Handle successful test runs
       promiseResolve(`Tests passed successfully for ${className}!\n\n${stdout}`);
     });
   });
