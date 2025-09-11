@@ -292,12 +292,25 @@ export const App = () => {
             break;
 
           case 'workflow_complete':
-            loadCustomAnimations().then(() => {
-              setSelectedAnimationName(data.className);
-              setToast(`动画 "${data.className}" 创建成功!`);
-              if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-              toastTimerRef.current = window.setTimeout(() => setToast(null), 3000);
-            });
+            const { className, filePath } = data;
+            if (className && filePath) {
+              import(/* @vite-ignore */ `/@fs/${filePath}`)
+                .then((mod) => {
+                  const newAnimClass = mod[Object.keys(mod)[0]] as AnimateClass;
+                  if (newAnimClass) {
+                    animationManager.register(newAnimClass);
+                    setAvailableAnimations((prev) => [...prev, newAnimClass]);
+                    setSelectedAnimationName(className);
+                    setToast(`动画 "${className}" 创建成功!`);
+                    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+                    toastTimerRef.current = window.setTimeout(() => setToast(null), 3000);
+                  }
+                })
+                .catch((err) => {
+                  console.error('Failed to dynamically import new animation:', err);
+                  setToast(`错误: 无法加载新动画 ${className}`);
+                });
+            }
             break;
 
           case 'error':

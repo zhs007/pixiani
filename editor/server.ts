@@ -399,6 +399,7 @@ async function main() {
     // --- Main async logic ---
     const run = async () => {
       let createdClassName: string | null = null;
+      let createdFilePath: string | null = null;
       try {
         const { prompt, sessionId: querySessionId } = request.query as {
           prompt: string;
@@ -433,8 +434,12 @@ async function main() {
             const finalText = result.response.text();
             writeEvent({ type: 'final_response', text: finalText });
             chatHistory.push({ role: 'model', parts: [{ text: finalText }] });
-            if (createdClassName) {
-              writeEvent({ type: 'workflow_complete', className: createdClassName });
+            if (createdClassName && createdFilePath) {
+              writeEvent({
+                type: 'workflow_complete',
+                className: createdClassName,
+                filePath: createdFilePath,
+              });
             }
             return; // End of loop
           }
@@ -456,7 +461,8 @@ async function main() {
               const res = await write_file(sessionId, 'animation', call.args.className, call.args.code);
               toolResponseContent = res.message;
               if (res.success && !createdClassName) {
-                createdClassName = call.args.className; // Capture the class name
+                createdClassName = call.args.className;
+                createdFilePath = res.filePath; // Capture the file path
               }
               break;
             }
