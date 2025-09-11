@@ -296,7 +296,7 @@ function run_tests(sessionId: string, className: string): Promise<string> {
       'animations',
       `${className}.test.ts`,
     );
-    const command = `npx vitest run "${testFilePath}" --root "${ROOT_DIR}" --config demo/vite.config.ts`;
+    const command = `npx vitest run "${testFilePath}" --root "${ROOT_DIR}"`;
 
     exec(command, (error, stdout, stderr) => {
       const combinedOutput = stdout + stderr;
