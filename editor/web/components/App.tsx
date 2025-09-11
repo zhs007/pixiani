@@ -250,29 +250,77 @@ export const App = () => {
   }, [animationManager]);
 
   // --- Event Handlers ---
-  const handleSendMessage = async () => {
+  const handleSendMessage = () => {
     if (!inputText.trim() || isThinking) return;
 
-    setIsThinking(true);
     const currentPrompt = inputText;
     setMessages((prev) => [...prev, { type: 'user', text: currentPrompt }]);
     setInputText('');
+    setIsThinking(true);
 
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: currentPrompt, sessionId }),
-      });
-      const data = await res.json();
-      setMessages((prev) => [...prev, { type: 'gemini', text: data.response }]);
-      await loadCustomAnimations();
-    } catch (error) {
-      console.error('Chat API error:', error);
-      setMessages((prev) => [...prev, { type: 'gemini', text: 'Sorry, an error occurred.' }]);
-    } finally {
+    const url = `/api/chat?prompt=${encodeURIComponent(currentPrompt)}&sessionId=${sessionId || ''}`;
+    const eventSource = new EventSource(url);
+
+    let geminiResponse = '';
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        switch (data.type) {
+          case 'session_id':
+            const newSid = data.sessionId;
+            setSessionId(newSid);
+            localStorage.setItem('sessionId', newSid);
+            break;
+
+          case 'tool_call':
+            setMessages((prev) => [
+              ...prev,
+              { type: 'gemini', text: `*调用工具: \`${data.name}\`...*` },
+            ]);
+            break;
+
+          case 'tool_response':
+            // Optional: log tool response for debugging or richer UI
+            // For now, we keep the UI clean and don't show this.
+            break;
+
+          case 'final_response':
+            geminiResponse = data.text;
+            // Don't add to messages yet, wait for the stream to close
+            break;
+
+          case 'workflow_complete':
+            loadCustomAnimations().then(() => {
+              setSelectedAnimationName(data.className);
+              setToast(`动画 "${data.className}" 创建成功!`);
+              if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+              toastTimerRef.current = window.setTimeout(() => setToast(null), 3000);
+            });
+            break;
+
+          case 'error':
+            setMessages((prev) => [
+              ...prev,
+              { type: 'gemini', text: `**错误:** ${data.message}` },
+            ]);
+            break;
+        }
+      } catch (err) {
+        console.error('Failed to parse SSE event:', err);
+        // This might be the final closing signal which is not JSON
+      }
+    };
+
+    eventSource.onerror = () => {
+      // This is also called when the connection is closed by the server
+      if (geminiResponse) {
+        setMessages((prev) => [...prev, { type: 'gemini', text: geminiResponse }]);
+      }
       setIsThinking(false);
-    }
+      eventSource.close();
+    };
   };
 
   const handleNewTask = async () => {

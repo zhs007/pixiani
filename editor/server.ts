@@ -375,123 +375,133 @@ async function main() {
     }
   });
 
-  server.post('/api/chat', async (request, reply) => {
-    try {
-      const body = request.body as any;
-      const { prompt } = body as { prompt: string };
-      let { sessionId } = body as { sessionId?: string };
+  server.get('/api/chat', (request, reply) => {
+    // --- SSE Setup ---
+    reply.raw.setHeader('Content-Type', 'text/event-stream');
+    reply.raw.setHeader('Connection', 'keep-alive');
+    reply.raw.setHeader('Cache-Control', 'no-cache');
+    reply.raw.setHeader('Access-Control-Allow-Origin', '*'); // Allow CORS for dev
 
-      if (!sessionId) {
-        sessionId = crypto.randomUUID();
-        sessions.set(sessionId, []);
-      } else if (!sessions.has(sessionId)) {
-        sessions.set(sessionId, []);
-      }
-      const chatHistory = sessions.get(sessionId)!;
+    const writeEvent = (data: object) => {
+      reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
 
-      const chat = model.startChat({
-        history: chatHistory,
-        generationConfig,
-        safetySettings,
-        tools,
-      });
+    // --- Main async logic ---
+    const run = async () => {
+      let createdClassName: string | null = null;
+      try {
+        const { prompt, sessionId: querySessionId } = request.query as {
+          prompt: string;
+          sessionId?: string;
+        };
+        let sessionId = querySessionId;
 
-      const processFunctionCalls = async (response: any, sessionId: string) => {
-        const functionCalls = response.functionCalls?.();
+        if (!sessionId) {
+          sessionId = crypto.randomUUID();
+          sessions.set(sessionId, []);
+          writeEvent({ type: 'session_id', sessionId });
+        } else if (!sessions.has(sessionId)) {
+          sessions.set(sessionId, []);
+        }
+        const chatHistory = sessions.get(sessionId)!;
 
-        if (functionCalls && functionCalls.length > 0) {
+        const chat = model.startChat({
+          history: chatHistory,
+          generationConfig,
+          safetySettings,
+          tools,
+        });
+
+        chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
+        let result = await chat.sendMessage(prompt);
+
+        const MAX_STEPS = 10;
+        for (let i = 0; i < MAX_STEPS; i++) {
+          const functionCalls = result.response.functionCalls?.();
+          if (!functionCalls || functionCalls.length === 0) {
+            // No more function calls, agent is done or requires input
+            const finalText = result.response.text();
+            writeEvent({ type: 'final_response', text: finalText });
+            chatHistory.push({ role: 'model', parts: [{ text: finalText }] });
+            if (createdClassName) {
+              writeEvent({ type: 'workflow_complete', className: createdClassName });
+            }
+            return; // End of loop
+          }
+
           const call = functionCalls[0];
-          let toolResponse;
+          server.log.info(`[${sessionId}] Executing tool call: ${call.name}`, call.args);
+          writeEvent({ type: 'tool_call', name: call.name, args: call.args });
 
-          server.log.info(`Executing tool call: ${call.name}`);
-
+          // --- Tool Execution Logic ---
+          let toolResponseContent;
           switch (call.name) {
-            case 'get_allowed_files': {
-              toolResponse = await get_allowed_files();
+            case 'get_allowed_files':
+              toolResponseContent = await get_allowed_files();
               break;
-            }
-            case 'read_file': {
-              toolResponse = await read_file(call.args.filepath);
+            case 'read_file':
+              toolResponseContent = await read_file(call.args.filepath);
               break;
-            }
             case 'create_animation_file': {
-              const createAnimResult = await write_file(
-                sessionId,
-                'animation',
-                call.args.className,
-                call.args.code,
-              );
-              toolResponse = createAnimResult.message;
+              const res = await write_file(sessionId, 'animation', call.args.className, call.args.code);
+              toolResponseContent = res.message;
+              if (res.success && !createdClassName) {
+                createdClassName = call.args.className; // Capture the class name
+              }
               break;
             }
             case 'create_test_file': {
-              const createTestResult = await write_file(
-                sessionId,
-                'test',
-                call.args.className,
-                call.args.code,
-              );
-              toolResponse = createTestResult.message;
+              const res = await write_file(sessionId, 'test', call.args.className, call.args.code);
+              toolResponseContent = res.message;
               break;
             }
             case 'update_animation_file': {
-              const updateAnimResult = await write_file(
-                sessionId,
-                'animation',
-                call.args.className,
-                call.args.code,
-              );
-              toolResponse = updateAnimResult.message;
+              const res = await write_file(sessionId, 'animation', call.args.className, call.args.code);
+              toolResponseContent = res.message;
               break;
             }
             case 'update_test_file': {
-              const updateTestResult = await write_file(
-                sessionId,
-                'test',
-                call.args.className,
-                call.args.code,
-              );
-              toolResponse = updateTestResult.message;
+              const res = await write_file(sessionId, 'test', call.args.className, call.args.code);
+              toolResponseContent = res.message;
               break;
             }
-            case 'run_tests': {
-              toolResponse = await run_tests(sessionId, call.args.className);
+            case 'run_tests':
+              toolResponseContent = await run_tests(sessionId, call.args.className);
               break;
-            }
-            default: {
-              toolResponse = `Unknown tool: ${call.name}`;
-            }
+            default:
+              toolResponseContent = `Unknown tool: ${call.name}`;
           }
+          // --- End Tool Execution ---
 
-          const result = await chat.sendMessage(
-            JSON.stringify({
-              functionResponse: {
-                name: call.name,
-                response: {
-                  content: toolResponse,
-                },
-              },
-            }),
-          );
+          writeEvent({ type: 'tool_response', name: call.name, response: toolResponseContent });
 
-          return result.response.text();
+          // Send the tool response back to the model
+          chatHistory.push({
+            role: 'model',
+            parts: [{ functionCall: call }],
+          });
+          chatHistory.push({
+            role: 'function',
+            parts: [{ functionResponse: { name: call.name, response: { content: toolResponseContent } } }],
+          });
+
+          result = await chat.sendMessage(''); // Send empty message to continue the chain
+
+          if (i === MAX_STEPS - 1) {
+            writeEvent({ type: 'error', message: 'Workflow exceeded maximum steps (10).' });
+            server.log.warn(`[${sessionId}] Workflow terminated due to exceeding max steps.`);
+            return;
+          }
         }
-        return response.text();
-      };
+      } catch (error: any) {
+        server.log.error(error, 'Error processing chat stream');
+        writeEvent({ type: 'error', message: `An unexpected error occurred: ${error.message}` });
+      } finally {
+        reply.raw.end(); // Close the SSE connection
+      }
+    };
 
-      const firstResult = await chat.sendMessage(prompt);
-      const firstResponse = firstResult.response;
-
-      const responseText = await processFunctionCalls(firstResponse, sessionId);
-
-      chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
-      chatHistory.push({ role: 'model', parts: [{ text: responseText }] });
-
-      reply.send({ response: responseText, sessionId });
-    } catch (error: any) {
-      server.log.error(error, 'Error processing chat request');
-      reply.status(500).send({ error: 'Failed to process chat request' });
-    }
+    run();
   });
 
   server.post('/api/clear_session', async (request, _reply) => {
