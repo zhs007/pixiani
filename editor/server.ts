@@ -277,6 +277,15 @@ async function write_file(
   const filePath = resolve(dir, `${className}${type === 'test' ? '.test' : ''}.ts`);
 
   try {
+    // Delete the file first to ensure a clean write and avoid caching issues.
+    try {
+      await fs.unlink(filePath);
+    } catch (e: any) {
+      if (e.code !== 'ENOENT') {
+        // Ignore "file not found" errors, but throw others.
+        throw e;
+      }
+    }
     await fs.writeFile(filePath, code);
     return {
       success: true,
