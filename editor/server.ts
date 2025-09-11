@@ -62,7 +62,7 @@ const model = genAI.getGenerativeModel({
 5.  **Run Tests:** Execute \`run_tests(className)\` to validate your implementation.
 6.  **Debug and Refine:**
     *   If the tests fail with a normal error, the tool will return the error output. Analyze the errors and use \`update_animation_file()\` or \`update_test_file()\` to fix the code. Repeat the \`run_tests()\` and update cycle until all tests pass.
-    *   If \`run_tests()\` returns a message starting with \`SYSTEM_ERROR:\`, it means there is a problem with the testing environment itself. **Do not try to fix this.** Your task is finished. Report the system error to the user as your final answer.
+    *   If \`run_tests()\` returns a message starting with \`SYSTEM_ERROR:\`, it means there is a problem with the testing environment itself. **Do not try to fix this.** Your task is finished. Report the full, detailed system error message to the user as your final answer so they can debug it.
 7.  **Completion:** Once \`run_tests()\` returns a success message, the task is complete. Inform the user that the animation has been created and tested successfully.
 
 **Strict Rules for Animation Code:**
@@ -312,9 +312,9 @@ function run_tests(sessionId: string, className: string): Promise<string> {
     exec(command, (error, stdout, stderr) => {
       const combinedOutput = stdout + stderr;
       // Detect a specific, unrecoverable environment error
-      if (combinedOutput.includes('No test files found')) {
+      if (combinedOutput.includes('No test files found') || combinedOutput.includes('Failed to resolve import')) {
         promiseResolve(
-          'SYSTEM_ERROR: Test runner could not find the test file. This is an environment issue. Do not attempt to fix this by modifying code. Stop and report the issue.',
+          `SYSTEM_ERROR: Test runner failed due to an environment issue (e.g., missing file or bad import path). Do not attempt to fix this by modifying code. Stop and report the issue. Original error:\n\n${combinedOutput}`,
         );
         return;
       }
