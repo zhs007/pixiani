@@ -9,7 +9,7 @@ import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/ge
 import { promises as fs, createWriteStream } from 'fs';
 import crypto from 'crypto';
 import multipart from '@fastify/multipart';
-import path from 'path';
+import path, { dirname } from 'path';
 import util from 'util';
 import { pipeline } from 'stream';
 import { glob } from 'glob';
@@ -267,10 +267,11 @@ async function write_file(
   className: string,
   code: string,
 ): Promise<{ success: boolean; message: string; filePath: string }> {
+  const baseDir = resolve(SESSIONS_DIR, sessionId, 'staging');
   const dir =
     type === 'animation'
-      ? resolve(SESSIONS_DIR, sessionId, 'src', 'animations')
-      : resolve(SESSIONS_DIR, sessionId, 'tests', 'animations');
+      ? resolve(baseDir, 'src', 'animations')
+      : resolve(baseDir, 'tests', 'animations');
 
   await fs.mkdir(dir, { recursive: true });
   const filePath = resolve(dir, `${className}${type === 'test' ? '.test' : ''}.ts`);
@@ -292,6 +293,7 @@ function run_tests(sessionId: string, className: string): Promise<string> {
     const testFilePath = resolve(
       SESSIONS_DIR,
       sessionId,
+      'staging',
       'tests',
       'animations',
       `${className}.test.ts`,
@@ -328,6 +330,53 @@ function run_tests(sessionId: string, className: string): Promise<string> {
       promiseResolve(`Tests passed successfully for ${className}!\n\n${stdout}`);
     });
   });
+}
+
+async function publish_files(
+  sessionId: string,
+  className: string,
+): Promise<{ success: boolean; finalPath?: string }> {
+  const stagingSrcPath = resolve(
+    SESSIONS_DIR,
+    sessionId,
+    'staging',
+    'src',
+    'animations',
+    `${className}.ts`,
+  );
+  const finalSrcPath = resolve(SESSIONS_DIR, sessionId, 'src', 'animations', `${className}.ts`);
+
+  const stagingTestPath = resolve(
+    SESSIONS_DIR,
+    sessionId,
+    'staging',
+    'tests',
+    'animations',
+    `${className}.test.ts`,
+  );
+  const finalTestPath = resolve(
+    SESSIONS_DIR,
+    sessionId,
+    'tests',
+    'animations',
+    `${className}.test.ts`,
+  );
+
+  try {
+    // Ensure final directories exist
+    await fs.mkdir(dirname(finalSrcPath), { recursive: true });
+    await fs.mkdir(dirname(finalTestPath), { recursive: true });
+
+    // Move the files
+    await fs.rename(stagingSrcPath, finalSrcPath);
+    await fs.rename(stagingTestPath, finalTestPath);
+
+    server.log.info(`[${sessionId}] Published files for ${className}`);
+    return { success: true, finalPath: finalSrcPath };
+  } catch (e: any) {
+    server.log.error(`[${sessionId}] Failed to publish files for ${className}: ${e.message}`);
+    return { success: false };
+  }
 }
 
 // --- Fastify Server ---
@@ -399,7 +448,6 @@ async function main() {
     // --- Main async logic ---
     const run = async () => {
       let createdClassName: string | null = null;
-      let createdFilePath: string | null = null;
       try {
         const { prompt, sessionId: querySessionId } = request.query as {
           prompt: string;
@@ -434,13 +482,6 @@ async function main() {
             const finalText = result.response.text();
             writeEvent({ type: 'final_response', text: finalText });
             chatHistory.push({ role: 'model', parts: [{ text: finalText }] });
-            if (createdClassName && createdFilePath) {
-              writeEvent({
-                type: 'workflow_complete',
-                className: createdClassName,
-                filePath: createdFilePath,
-              });
-            }
             return; // End of loop
           }
 
@@ -462,7 +503,6 @@ async function main() {
               toolResponseContent = res.message;
               if (res.success && !createdClassName) {
                 createdClassName = call.args.className;
-                createdFilePath = res.filePath; // Capture the file path
               }
               break;
             }
@@ -490,6 +530,28 @@ async function main() {
           // --- End Tool Execution ---
 
           writeEvent({ type: 'tool_response', name: call.name, response: toolResponseContent });
+
+          // --- Publish on Success ---
+          if (
+            call.name === 'run_tests' &&
+            toolResponseContent.startsWith('Tests passed successfully')
+          ) {
+            const classNameToPublish = call.args.className;
+            server.log.info(`[${sessionId}] Tests passed for ${classNameToPublish}, attempting to publish...`);
+            const publishResult = await publish_files(sessionId, classNameToPublish);
+            if (publishResult.success && publishResult.finalPath) {
+              writeEvent({
+                type: 'workflow_complete',
+                className: classNameToPublish,
+                filePath: publishResult.finalPath,
+              });
+            } else {
+              writeEvent({
+                type: 'error',
+                message: `Agent task succeeded, but failed to publish files for ${classNameToPublish}.`,
+              });
+            }
+          }
 
           // Send the tool response back to the model
           chatHistory.push({
