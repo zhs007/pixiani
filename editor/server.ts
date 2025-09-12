@@ -480,18 +480,21 @@ async function publish_files(
     const haveFinalSrc = await exists(finalSrcPath);
     const haveFinalTest = await exists(finalTestPath);
 
-    // Move src only if not already published
-    if (!haveFinalSrc && haveStagingSrc) {
-      await fs.rename(stagingSrcPath, finalSrcPath);
+    // Always publish/overwrite src if a staged src exists
+    if (haveStagingSrc) {
+      await fs.copyFile(stagingSrcPath, finalSrcPath);
+      // remove staged copy to keep staging clean
+      try { await fs.unlink(stagingSrcPath); } catch {}
     }
 
-    // Move test if present; tests are optional for UI, so missing test shouldn't fail publish
-    if (!haveFinalTest && haveStagingTest) {
-      await fs.rename(stagingTestPath, finalTestPath);
+    // Publish/overwrite test if a staged test exists (tests are optional)
+    if (haveStagingTest) {
+      await fs.copyFile(stagingTestPath, finalTestPath);
+      try { await fs.unlink(stagingTestPath); } catch {}
     }
 
-    const srcNowExists = haveFinalSrc || (await exists(finalSrcPath));
-    const testNowExists = haveFinalTest || (await exists(finalTestPath));
+    const srcNowExists = haveStagingSrc || haveFinalSrc || (await exists(finalSrcPath));
+    const testNowExists = haveStagingTest || haveFinalTest || (await exists(finalTestPath));
     const testWasMissing = !haveStagingTest && !haveFinalTest && !testNowExists;
 
     if (!srcNowExists) {
@@ -505,8 +508,9 @@ async function publish_files(
     const logPayload: any = { success: true, finalPath: finalSrcPath };
     if (testWasMissing) logPayload.warning = 'Test file not found in staging or final; published animation only.';
 
-    console.info(`[${sessionId}] Published files for ${className}${testWasMissing ? ' (animation only, no test moved)' : ''}`);
-    try { await logToolCall(sessionId, 'publish_files', { className }, logPayload); } catch {}
+    const mode = haveStagingSrc && haveFinalSrc ? 'overwritten' : (haveStagingSrc ? 'published' : 'kept');
+    console.info(`[${sessionId}] Published files for ${className} (src ${mode})${testWasMissing ? ' (animation only, no test updated)' : ''}`);
+    try { await logToolCall(sessionId, 'publish_files', { className }, { ...logPayload, mode }); } catch {}
     return { success: true, finalPath: finalSrcPath };
   } catch (e: any) {
     console.error(`[${sessionId}] Failed to publish files for ${className}: ${e.message}`);
