@@ -54,6 +54,8 @@ export const App = () => {
   const typingRef = useRef<{ index: number; text: string } | null>(null);
   const pendingTextRef = useRef<string>('');
   const typingTimerRef = useRef<number | null>(null);
+  // Mark when we expect the SSE to close normally so onerror doesn't show a network error
+  const expectedCloseRef = useRef(false);
 
   // Animation manager and UI state
   const animationManager = React.useMemo(() => new AnimationManager(), []);
@@ -264,7 +266,8 @@ export const App = () => {
     setIsThinking(true);
 
     const url = `/api/chat?prompt=${encodeURIComponent(currentPrompt)}&sessionId=${sessionId || ''}`;
-    const eventSource = new EventSource(url);
+  expectedCloseRef.current = false;
+  const eventSource = new EventSource(url);
 
     let geminiResponse = '';
 
@@ -383,6 +386,9 @@ export const App = () => {
                 }
               }
             } catch {}
+            // Proactively close the SSE; this is an expected normal end
+            expectedCloseRef.current = true;
+            try { eventSource.close(); } catch {}
             // Don't add to messages yet, wait for the stream to close
             break;
 
@@ -432,6 +438,12 @@ export const App = () => {
       if (typingTimerRef.current) {
         window.clearInterval(typingTimerRef.current);
         typingTimerRef.current = null;
+      }
+      // If we intentionally closed after final_response, do not show a network error
+      if (expectedCloseRef.current) {
+        setIsThinking(false);
+        try { eventSource.close(); } catch {}
+        return;
       }
       if (geminiResponse && geminiResponse !== lastModelMsgRef.current) {
         setMessages((prev) => [...prev, { type: 'gemini', text: geminiResponse }]);
