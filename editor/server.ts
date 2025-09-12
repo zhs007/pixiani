@@ -83,11 +83,12 @@ const model = genAI.getGenerativeModel({
 
 **Strict Rules for Test Code:**
 
-1.  **Imports:**
+1.  **Imports (VERY IMPORTANT):**
     *   Use \`import { describe, it, expect, vi, beforeEach } from 'vitest';\`
-    *   Import the animation class you are testing: \`import { YourClassName } from '../../src/animations/YourClassName';\` (Note the relative path).
-    *   Import \`BaseObject\`: \`import { BaseObject } from '../../src/core/BaseObject';\`
-    *   Mock Pixi.js sprites for testing. Refer to existing test files for examples.
+    *   **For the Animation Class you are testing:** You MUST use a relative path. The path from the test file to the animation file is always the same: \`import { YourClassName } from '../../src/animations/YourClassName';\`
+    *   **For ALL other library code (`BaseObject`, `BaseAnimate`, etc.):** You MUST use the 'pixi-animation-library' alias. Example: \`import { BaseObject, BaseAnimate } from 'pixi-animation-library';\`
+    *   Do NOT use relative paths like \`../../src/core/BaseObject.ts\`. Only use the alias.
+    *   You can import the class-under-test and the library code in the same statement: \`import { YourClassName, BaseObject } from 'pixi-animation-library';\` is WRONG. It must be two separate imports as described above.
 2.  **Structure:**
     *   Use a \`describe\` block for the animation class.
     *   Use \`beforeEach\` to set up a clean instance of your animation before each test.
