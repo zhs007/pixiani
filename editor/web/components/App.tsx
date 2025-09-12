@@ -43,21 +43,22 @@ export const App = () => {
   const [messages, setMessages] = useState<{ type: 'user' | 'gemini'; text: string }[]>([]);
   const [inputText, setInputText] = useState('');
   const [isThinking, setIsThinking] = useState(false);
-
-  const [animationManager] = useState(() => new AnimationManager());
-  const [availableAnimations, setAvailableAnimations] =
-    useState<AnimateClass[]>(standardAnimations);
-  const [selectedAnimationName, setSelectedAnimationName] = useState<string>(
-    standardAnimations[0].animationName,
-  );
-  const [toast, setToast] = useState<string | null>(null);
-  const toastTimerRef = React.useRef<number | null>(null);
   const hasLoadedCustomOnceRef = React.useRef(false);
   const lastCustomNamesRef = React.useRef<Set<string>>(new Set());
 
   const pixiAppRef = useRef<PIXI.Application | null>(null);
   const pixiContainerRef = useRef<HTMLDivElement>(null);
   const currentObjectRef = useRef<BaseObject | null>(null);
+  const lastModelMsgRef = useRef<string | null>(null);
+
+  // Animation manager and UI state
+  const animationManager = React.useMemo(() => new AnimationManager(), []);
+  const [availableAnimations, setAvailableAnimations] = useState<AnimateClass[]>(standardAnimations);
+  const [selectedAnimationName, setSelectedAnimationName] = useState<string>(standardAnimations[0]?.animationName);
+
+  // Toast helpers
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
 
   const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
   const [requiredSpriteCount, setRequiredSpriteCount] = useState(0);
@@ -268,6 +269,17 @@ export const App = () => {
         const data = JSON.parse(event.data);
 
         switch (data.type) {
+          case 'heartbeat': {
+            // Show streaming model thoughts after each tool round-trip; avoid duplicates
+            if (data.phase === 'model_continue_end' && typeof data.responsePreview === 'string') {
+              const preview = data.responsePreview.trim();
+              if (preview && lastModelMsgRef.current !== preview) {
+                lastModelMsgRef.current = preview;
+                setMessages((prev) => [...prev, { type: 'gemini', text: preview }]);
+              }
+            }
+            break;
+          }
           case 'session_id':
             const newSid = data.sessionId;
             setSessionId(newSid);
@@ -281,10 +293,19 @@ export const App = () => {
             ]);
             break;
 
-          case 'tool_response':
-            // Optional: log tool response for debugging or richer UI
-            // For now, we keep the UI clean and don't show this.
+          case 'tool_response': {
+            // Skip noisy responses for file listing/reading tools
+            if (
+              data.name === 'get_allowed_files' ||
+              data.name === 'read_file' ||
+              data.name === 'create_animation_file' ||
+              data.name === 'run_tests'
+            ) break;
+            if (typeof data.response === 'string' && data.response.trim()) {
+              setMessages((prev) => [...prev, { type: 'gemini', text: `工具 \`${data.name}\` 返回: ${data.response}` }]);
+            }
             break;
+          }
 
           case 'final_response':
             geminiResponse = data.text;
@@ -332,7 +353,7 @@ export const App = () => {
 
     eventSource.onerror = (ev) => {
       // Network errors or stream closed. Show a user-visible notice if no final response yet.
-      if (geminiResponse) {
+      if (geminiResponse && geminiResponse !== lastModelMsgRef.current) {
         setMessages((prev) => [...prev, { type: 'gemini', text: geminiResponse }]);
       } else {
         setMessages((prev) => [

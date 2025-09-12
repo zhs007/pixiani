@@ -690,7 +690,16 @@ async function main() {
           ) {
             const classNameToPublish = call.args.className;
             server.log.info(`[${sessionId}] Tests passed for ${classNameToPublish}, attempting to publish...`);
+            // Surface a synthetic tool_call to keep UI consistent when auto-publishing
+            writeEvent({ type: 'tool_call', name: 'publish_files', args: { className: classNameToPublish } });
             const publishResult = await publish_files(sessionId, classNameToPublish);
+            writeEvent({
+              type: 'tool_response',
+              name: 'publish_files',
+              response: publishResult.success
+                ? `Published ${classNameToPublish} successfully.`
+                : `Failed to publish ${classNameToPublish}.`,
+            });
             if (publishResult.success && publishResult.finalPath) {
               writeEvent({
                 type: 'workflow_complete',
