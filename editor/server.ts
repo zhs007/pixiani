@@ -297,7 +297,8 @@ async function read_file(filepath: string, sessionId?: string): Promise<string> 
     const contents = await fs.readFile(resolvedPath, 'utf-8');
     if (sessionId) {
       try {
-        await logToolCall(sessionId, 'read_file', { filepath }, { outputSummary: `${contents.slice(0,200)}...` });
+  // Log full contents for transparency as requested
+  await logToolCall(sessionId, 'read_file', { filepath }, { output: contents });
       } catch {}
     }
     return contents;
@@ -617,6 +618,8 @@ async function main() {
           if (!functionCalls || functionCalls.length === 0) {
             // No more function calls, agent is done or requires input
             const finalText = result.response.text();
+            // Log full final response to workflow log for auditing
+            await logWorkflow(sessionId, 'final_response', { text: finalText });
             writeEvent({ type: 'final_response', text: finalText });
             chatHistory.push({ role: 'model', parts: [{ text: finalText }] });
             return; // End of loop
@@ -744,7 +747,7 @@ async function main() {
               );
               const contEnd = Date.now();
               let preview = '';
-              try { preview = result?.response?.text?.()?.slice?.(0, 500) ?? ''; } catch {}
+              try { preview = result?.response?.text?.() ?? ''; } catch {}
               await logWorkflow(sessionId, 'model_continue_end', { durationMs: contEnd - contStart, responsePreview: preview });
               writeEvent({ type: 'heartbeat', phase: 'model_continue_end', durationMs: contEnd - contStart, responsePreview: preview });
             } catch (e: any) {
