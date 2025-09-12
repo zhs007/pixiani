@@ -9,7 +9,7 @@ import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/ge
 import { promises as fs, createWriteStream } from 'fs';
 import crypto from 'crypto';
 import multipart from '@fastify/multipart';
-import path, { dirname } from 'path';
+import path from 'path';
 import util from 'util';
 import { pipeline } from 'stream';
 import { glob } from 'glob';
@@ -56,14 +56,15 @@ const model = genAI.getGenerativeModel({
 **Your Workflow:**
 
 1.  **Understand the Requirements:** Read the user's request for a new animation.
-2.  **Explore Existing Code:** Use the \`get_allowed_files()\` tool to see existing animations and tests. Use the \`read_file(filepath)\` tool to understand how they are implemented. This is crucial for consistency. Do not generate a class name that already exists.
+2.  **Explore Existing Code:** Use the \`get_allowed_files()\` tool to see existing animations and tests. Use the \`read_file(filepath)\` tool to understand how they are implemented. This is crucial for consistency. Do not generate a class name that already exists. Before writing your own tests, read at least one reference test from \`tests/animations/FadeAnimation.test.ts\` or \`tests/animations/ComplexPopAnimation.test.ts\` to mirror their mocking style and structure.
 3.  **Write the Animation Code:** Write the TypeScript code for the new animation class. The class name must be in PascalCase. Call \`create_animation_file(className, code)\` to save it.
 4.  **Write a Test:** Create a comprehensive test file for your new animation using Vitest. The test should cover the animation's lifecycle, state changes, and visual properties. Call \`create_test_file(className, code)\` to save it.
 5.  **Run Tests:** Execute \`run_tests(className)\` to validate your implementation.
 6.  **Debug and Refine:**
     *   If the tests fail with a normal error, the tool will return the error output. Analyze the errors and use \`update_animation_file()\` or \`update_test_file()\` to fix the code. Repeat the \`run_tests()\` and update cycle until all tests pass.
     *   If \`run_tests()\` returns a message starting with \`SYSTEM_ERROR:\`, it means there is a problem with the testing environment itself. **Do not try to fix this.** Your task is finished. Report the full, detailed system error message to the user as your final answer so they can debug it.
-7.  **Completion:** Once \`run_tests()\` returns a success message, the task is complete. Inform the user that the animation has been created and tested successfully.
+7.  **Publish:** Once \`run_tests()\` returns a success message (including success with warnings), call \`publish_files(className)\` to make the files available to the editor UI.
+8.  **Completion:** Inform the user that the animation has been created, tested, and published successfully.
 
 **Strict Rules for Animation Code:**
 
@@ -86,13 +87,20 @@ const model = genAI.getGenerativeModel({
 1.  **Imports (VERY IMPORTANT):**
     *   Use \`import { describe, it, expect, vi, beforeEach } from 'vitest';\`
     *   **For the Animation Class you are testing:** You MUST use a relative path. The path from the test file to the animation file is always the same: \`import { YourClassName } from '../../src/animations/YourClassName';\`
-    *   **For ALL other library code (`BaseObject`, `BaseAnimate`, etc.):** You MUST use the 'pixi-animation-library' alias. Example: \`import { BaseObject, BaseAnimate } from 'pixi-animation-library';\`
+    *   **For ALL other library code (\`BaseObject\`, \`BaseAnimate\`, etc.):** You MUST use the 'pixi-animation-library' alias. Example: \`import { BaseObject, BaseAnimate } from 'pixi-animation-library';\`
     *   Do NOT use relative paths like \`../../src/core/BaseObject.ts\`. Only use the alias.
     *   You can import the class-under-test and the library code in the same statement: \`import { YourClassName, BaseObject } from 'pixi-animation-library';\` is WRONG. It must be two separate imports as described above.
 2.  **Structure:**
     *   Use a \`describe\` block for the animation class.
     *   Use \`beforeEach\` to set up a clean instance of your animation before each test.
-    *   Write multiple \`it\` blocks to test different aspects: initial state, play(), update() logic, looping, and completion.`,
+  *   Write multiple \`it\` blocks to test different aspects: initial state, play(), update() logic, looping, and completion. At minimum, include at least one \`it\` with an \`expect\` so the file never reports "no tests".
+
+3.  **Mocking PIXI (MANDATORY for tests that construct PIXI objects):**
+  *   Follow the examples in \`tests/animations/FadeAnimation.test.ts\` and \`tests/animations/ComplexPopAnimation.test.ts\`.
+  *   Use \`vi.mock('pixi.js', async () => { const actual = await vi.importActual('pixi.js'); return { ...actual, Sprite: vi.fn().mockImplementation(factory) }; })\`.
+  *   Only mock what you need (commonly \`Sprite\` and simple methods like \`anchor.set\`, \`scale.set\`). Keep the mock minimal, deterministic, and per-test reset with \`vi.clearAllMocks()\`.
+  *   Do NOT rely on global or implicit pixi behavior. Tests must be self-contained and deterministic.
+`,
 });
 
 const generationConfig = {
@@ -120,6 +128,10 @@ const safetySettings = [
     threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
   },
 ];
+
+// --- Agent continuation controls ---
+const CONTINUE_TIMEOUT_MS = Number(process.env.AGENT_CONTINUE_TIMEOUT_MS ?? 30000);
+const CONTINUE_RETRIES = Number(process.env.AGENT_CONTINUE_RETRIES ?? 1);
 
 const tools: any = [
   {
@@ -233,32 +245,70 @@ const tools: any = [
           required: ['className', 'code'],
         },
       },
+      {
+        name: 'publish_files',
+        description: 'Publishes the staged animation and test files for the given className into the session directories so the editor can load them.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            className: {
+              type: 'STRING',
+              description: 'The name of the animation class to publish (PascalCase).',
+            },
+          },
+          required: ['className'],
+        },
+      },
     ],
   },
 ];
 
 // --- Tool Implementations ---
 
-async function get_allowed_files(): Promise<string> {
+async function get_allowed_files(sessionId?: string): Promise<string> {
   const animationFiles = await glob('src/animations/*.ts');
   const testFiles = await glob('tests/animations/*.test.ts');
   const coreFiles = await glob('src/core/*.ts');
   const allFiles = [...animationFiles, ...testFiles, ...coreFiles];
-  return `Allowed files:\n${allFiles.join('\n')}`;
+  const out = `Allowed files:\n${allFiles.join('\n')}`;
+  if (sessionId) {
+    try {
+      await logToolCall(sessionId, 'get_allowed_files', {}, { result: allFiles });
+    } catch {}
+  }
+  return out;
 }
 
-async function read_file(filepath: string): Promise<string> {
+async function read_file(filepath: string, sessionId?: string): Promise<string> {
   const resolvedPath = resolve(ROOT_DIR, filepath);
   if (
     !resolvedPath.startsWith(ROOT_DIR) ||
     (!filepath.endsWith('.ts') && !filepath.endsWith('.test.ts'))
   ) {
-    return 'Error: Access denied. You can only read project TypeScript files.';
+    const out = 'Error: Access denied. You can only read project TypeScript files.';
+    if (sessionId) {
+      try {
+        await logToolCall(sessionId, 'read_file', { filepath }, { output: out });
+      } catch {}
+    }
+    return out;
   }
   try {
-    return await fs.readFile(resolvedPath, 'utf-8');
+    const contents = await fs.readFile(resolvedPath, 'utf-8');
+    if (sessionId) {
+      try {
+        await logToolCall(sessionId, 'read_file', { filepath }, { outputSummary: `${contents.slice(0,200)}...` });
+      } catch {}
+    }
+    return contents;
   } catch (e: any) {
-    return `Error: Could not read file: ${e.message}`;
+    const out = `Error: Could not read file: ${e.message}`;
+    if (sessionId) {
+      try {
+        await logToolCall(sessionId, 'read_file', { filepath }, { error: e.message });
+      } catch {}
+    }
+    return out;
   }
 }
 
@@ -288,13 +338,41 @@ async function write_file(
       }
     }
     await fs.writeFile(filePath, code);
+    // Log the tool call
+    try {
+      const toolName = type === 'animation' ? 'create_animation_file' : 'create_test_file';
+      await logToolCall(sessionId, toolName, { className }, { success: true, filePath });
+    } catch {}
     return {
       success: true,
       message: `File ${path.basename(filePath)} saved successfully.`,
       filePath,
     };
   } catch (error: any) {
+    try {
+      const toolName = type === 'animation' ? 'create_animation_file' : 'create_test_file';
+      await logToolCall(sessionId, toolName, { className }, { success: false, message: error.message });
+    } catch {}
     return { success: false, message: `Error saving file: ${error.message}`, filePath };
+  }
+}
+
+// Helper: log a tool call (input and output) to a session-scoped JSONL file for debugging
+async function logToolCall(sessionId: string, toolName: string, input: any, output: any) {
+  try {
+    const logDir = resolve(SESSIONS_DIR, sessionId, 'logs');
+    await fs.mkdir(logDir, { recursive: true });
+    const entry = {
+      timestamp: new Date().toISOString(),
+      tool: toolName,
+      input,
+      output,
+    };
+    const logPath = resolve(logDir, 'tool_calls.log');
+    // Append as JSON line
+    await fs.appendFile(logPath, JSON.stringify(entry) + '\n');
+  } catch (e: any) {
+    console.error(`[${sessionId}] Failed to write tool call log: ${e?.message || e}`);
   }
 }
 
@@ -308,36 +386,51 @@ function run_tests(sessionId: string, className: string): Promise<string> {
       'animations',
       `${className}.test.ts`,
     );
-    const command = `npx vitest run "${testFilePath}" --root "${ROOT_DIR}"`;
+  const command = `SESSION_TESTS=1 npx vitest run "${testFilePath}" --root "${ROOT_DIR}"`;
+
+    console.info(`[${sessionId}] Running tests for ${className}: ${command}`);
 
     exec(command, (error, stdout, stderr) => {
       const combinedOutput = stdout + stderr;
-      // Detect a specific, unrecoverable environment error
-      if (combinedOutput.includes('No test files found') || combinedOutput.includes('Failed to resolve import')) {
-        promiseResolve(
-          `SYSTEM_ERROR: Test runner failed due to an environment issue (e.g., missing file or bad import path). Do not attempt to fix this by modifying code. Stop and report the issue. Original error:\n\n${combinedOutput}`,
-        );
-        return;
+
+      // Build the user-facing result message (same logic as before)
+      let resultMessage: string;
+      // Detect unrecoverable environment errors and return SYSTEM_ERROR so the agent stops trying to fix code
+      if (
+        combinedOutput.includes('No test files found') ||
+        combinedOutput.includes('Failed to resolve import') ||
+        combinedOutput.includes('Cannot convert a Symbol value to a string') ||
+        combinedOutput.includes('Cannot convert a Symbol value to string')
+      ) {
+        resultMessage =
+          `SYSTEM_ERROR: Test runner failed due to an environment issue (e.g., missing file, bad import path, or incompatible native/module build). Do not attempt to fix this by modifying code. Stop and report the issue. Original error:\n\n${combinedOutput}`;
+      } else if (error) {
+        resultMessage = `Tests failed for ${className}:\n\nSTDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`;
+      } else if (stderr) {
+        resultMessage = `Tests completed for ${className} (with warnings):\n\nSTDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`;
+      } else {
+        resultMessage = `Tests passed successfully for ${className}!\n\n${stdout}`;
       }
 
-      // Handle regular test failures
-      if (error) {
-        promiseResolve(
-          `Tests failed for ${className}:\n\nSTDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`,
-        );
-        return;
-      }
-
-      // Handle tests that pass but have warnings
-      if (stderr) {
-        promiseResolve(
-          `Tests completed for ${className} (with warnings):\n\nSTDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`,
-        );
-        return;
-      }
-
-      // Handle successful test runs
-      promiseResolve(`Tests passed successfully for ${className}!\n\n${stdout}`);
+  // Persist the full runner output to a session-scoped log to help debugging later.
+      const logPath = resolve(SESSIONS_DIR, sessionId, 'logs', `${className}_run_tests.log`);
+      // Ensure directory exists and write the log (fire-and-forget, but capture failures)
+      fs.mkdir(dirname(logPath), { recursive: true })
+        .then(() => fs.writeFile(logPath, combinedOutput))
+        .then(async () => {
+          console.info(`[${sessionId}] Test run output written to ${logPath}`);
+          // Log the tool call (input and summarized output)
+          try {
+            await logToolCall(sessionId, 'run_tests', { className, command }, { resultMessage, logPath });
+          } catch (e: any) {
+            console.error(`[${sessionId}] Failed to log run_tests call: ${e?.message || e}`);
+          }
+        })
+        .catch((e: any) => console.error(`[${sessionId}] Failed to write test run log: ${e?.message || e}`))
+        .finally(() => {
+          // Resolve the promise with the same message the agent originally received
+          promiseResolve(resultMessage);
+        });
     });
   });
 }
@@ -346,6 +439,10 @@ async function publish_files(
   sessionId: string,
   className: string,
 ): Promise<{ success: boolean; finalPath?: string }> {
+  // Helper to check file existence
+  const exists = async (p: string) => {
+    try { await fs.access(p); return true; } catch { return false; }
+  };
   const stagingSrcPath = resolve(
     SESSIONS_DIR,
     sessionId,
@@ -377,14 +474,44 @@ async function publish_files(
     await fs.mkdir(dirname(finalSrcPath), { recursive: true });
     await fs.mkdir(dirname(finalTestPath), { recursive: true });
 
-    // Move the files
-    await fs.rename(stagingSrcPath, finalSrcPath);
-    await fs.rename(stagingTestPath, finalTestPath);
+    const haveStagingSrc = await exists(stagingSrcPath);
+    const haveStagingTest = await exists(stagingTestPath);
+    const haveFinalSrc = await exists(finalSrcPath);
+    const haveFinalTest = await exists(finalTestPath);
 
-    server.log.info(`[${sessionId}] Published files for ${className}`);
+    // Move src only if not already published
+    if (!haveFinalSrc && haveStagingSrc) {
+      await fs.rename(stagingSrcPath, finalSrcPath);
+    }
+
+    // Move test if present; tests are optional for UI, so missing test shouldn't fail publish
+    if (!haveFinalTest && haveStagingTest) {
+      await fs.rename(stagingTestPath, finalTestPath);
+    }
+
+    const srcNowExists = haveFinalSrc || (await exists(finalSrcPath));
+    const testNowExists = haveFinalTest || (await exists(finalTestPath));
+    const testWasMissing = !haveStagingTest && !haveFinalTest && !testNowExists;
+
+    if (!srcNowExists) {
+      // Cannot publish without the animation source file
+      const errMsg = `Source file missing for ${className} (staging and final not found)`;
+      console.error(`[${sessionId}] ${errMsg}`);
+      try { await logToolCall(sessionId, 'publish_files', { className }, { success: false, error: errMsg }); } catch {}
+      return { success: false };
+    }
+
+    const logPayload: any = { success: true, finalPath: finalSrcPath };
+    if (testWasMissing) logPayload.warning = 'Test file not found in staging or final; published animation only.';
+
+    console.info(`[${sessionId}] Published files for ${className}${testWasMissing ? ' (animation only, no test moved)' : ''}`);
+    try { await logToolCall(sessionId, 'publish_files', { className }, logPayload); } catch {}
     return { success: true, finalPath: finalSrcPath };
   } catch (e: any) {
-    server.log.error(`[${sessionId}] Failed to publish files for ${className}: ${e.message}`);
+    console.error(`[${sessionId}] Failed to publish files for ${className}: ${e.message}`);
+    try {
+      await logToolCall(sessionId, 'publish_files', { className }, { success: false, error: e.message });
+    } catch {}
     return { success: false };
   }
 }
@@ -495,7 +622,7 @@ async function main() {
             return; // End of loop
           }
 
-          const call = functionCalls[0];
+    const call = functionCalls[0] as any;
           server.log.info(`[${sessionId}] Executing tool call: ${call.name}`, call.args);
           writeEvent({ type: 'tool_call', name: call.name, args: call.args });
 
@@ -503,10 +630,10 @@ async function main() {
           let toolResponseContent;
           switch (call.name) {
             case 'get_allowed_files':
-              toolResponseContent = await get_allowed_files();
+                  toolResponseContent = await get_allowed_files(sessionId);
               break;
             case 'read_file':
-              toolResponseContent = await read_file(call.args.filepath);
+                  toolResponseContent = await read_file(call.args.filepath, sessionId);
               break;
             case 'create_animation_file': {
               const res = await write_file(sessionId, 'animation', call.args.className, call.args.code);
@@ -534,6 +661,18 @@ async function main() {
             case 'run_tests':
               toolResponseContent = await run_tests(sessionId, call.args.className);
               break;
+            case 'publish_files':
+              {
+                const res = await publish_files(sessionId, call.args.className);
+                toolResponseContent = res.success
+                  ? `Published ${call.args.className} successfully.`
+                  : `Failed to publish ${call.args.className}.`;
+                if (!res.success) {
+                  // Also surface an error event for the UI to display clearly
+                  writeEvent({ type: 'error', message: `发布失败：${call.args.className}` });
+                }
+              }
+              break;
             default:
               toolResponseContent = `Unknown tool: ${call.name}`;
           }
@@ -544,7 +683,10 @@ async function main() {
           // --- Publish on Success ---
           if (
             call.name === 'run_tests' &&
-            toolResponseContent.startsWith('Tests passed successfully')
+            (
+              toolResponseContent.startsWith('Tests passed successfully') ||
+              (toolResponseContent.startsWith('Tests completed for') && toolResponseContent.includes('(with warnings)'))
+            )
           ) {
             const classNameToPublish = call.args.className;
             server.log.info(`[${sessionId}] Tests passed for ${classNameToPublish}, attempting to publish...`);
@@ -573,7 +715,36 @@ async function main() {
             parts: [{ functionResponse: { name: call.name, response: { content: toolResponseContent } } }],
           });
 
-          result = await chat.sendMessage(''); // Send empty message to continue the chain
+          {
+            const contStart = Date.now();
+            await logWorkflow(sessionId, 'model_continue_start', { retries: CONTINUE_RETRIES, timeoutMs: CONTINUE_TIMEOUT_MS });
+            writeEvent({ type: 'heartbeat', phase: 'model_continue_start', retries: CONTINUE_RETRIES, timeoutMs: CONTINUE_TIMEOUT_MS });
+            try {
+              result = await sendWithTimeoutAndRetry(
+                () => chat.sendMessage(''),
+                CONTINUE_TIMEOUT_MS,
+                CONTINUE_RETRIES,
+                async (attempt) => {
+                  await logWorkflow(sessionId, 'model_continue_attempt_start', { attempt });
+                  writeEvent({ type: 'heartbeat', phase: 'model_continue_attempt_start', attempt });
+                },
+                async (attempt: number, err: any) => {
+                  await logWorkflow(sessionId, 'model_continue_attempt_error', { attempt, error: err?.message || String(err) });
+                  writeEvent({ type: 'heartbeat', phase: 'model_continue_attempt_error', attempt, error: (err?.message || String(err)).slice(0, 300) });
+                }
+              );
+              const contEnd = Date.now();
+              let preview = '';
+              try { preview = result?.response?.text?.()?.slice?.(0, 500) ?? ''; } catch {}
+              await logWorkflow(sessionId, 'model_continue_end', { durationMs: contEnd - contStart, responsePreview: preview });
+              writeEvent({ type: 'heartbeat', phase: 'model_continue_end', durationMs: contEnd - contStart, responsePreview: preview });
+            } catch (e: any) {
+              const contEnd = Date.now();
+              await logWorkflow(sessionId, 'model_continue_error', { durationMs: contEnd - contStart, error: e?.message || String(e) });
+              writeEvent({ type: 'heartbeat', phase: 'model_continue_error', durationMs: contEnd - contStart, error: (e?.message || String(e)).slice(0, 300) });
+              throw e;
+            }
+          }
 
           if (i === MAX_STEPS - 1) {
             writeEvent({ type: 'error', message: 'Workflow exceeded maximum steps (10).' });
@@ -591,6 +762,47 @@ async function main() {
 
     run();
   });
+// Append workflow events to a session-scoped JSONL log
+async function logWorkflow(sessionId: string, event: string, payload: any) {
+  try {
+    const logDir = resolve(SESSIONS_DIR, sessionId, 'logs');
+    await fs.mkdir(logDir, { recursive: true });
+    const logPath = resolve(logDir, 'workflow.log');
+    const entry = { timestamp: new Date().toISOString(), event, ...payload };
+    await fs.appendFile(logPath, JSON.stringify(entry) + '\n');
+  } catch (e: any) {
+    console.error(`[${sessionId}] Failed to write workflow log: ${e?.message || e}`);
+  }
+}
+
+// Promise timeout with optional retries and hooks
+async function sendWithTimeoutAndRetry<T>(
+  fn: () => Promise<T>,
+  timeoutMs: number,
+  retries: number,
+  onAttemptStart?: (attempt: number) => void | Promise<void>,
+  onAttemptError?: (attempt: number, err: unknown) => void | Promise<void>,
+): Promise<T> {
+  let attempt = 0;
+  while (true) {
+    attempt++;
+    try {
+      if (onAttemptStart) await onAttemptStart(attempt);
+      const res = await promiseWithTimeout(fn(), timeoutMs);
+      return res;
+    } catch (e) {
+      if (onAttemptError) await onAttemptError(attempt, e);
+      if (attempt > retries) throw e;
+    }
+  }
+}
+
+function promiseWithTimeout<T>(p: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs);
+    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
+}
 
   server.post('/api/clear_session', async (request, _reply) => {
     const { sessionId } = request.body as any;
@@ -603,8 +815,9 @@ async function main() {
 
   server.get('/api/animations/:sessionId', async (request, _reply) => {
     const { sessionId } = request.params as any;
-    const sessionDir = resolve(SESSIONS_DIR, sessionId, 'animations');
+    const sessionDir = resolve(SESSIONS_DIR, sessionId, 'src', 'animations');
     const legacyDir = resolve(__dirname, 'sessions', sessionId, 'animations');
+    const legacyRootDir = resolve(SESSIONS_DIR, sessionId, 'animations');
     const buildList = async (dir: string) => {
       const files = await fs.readdir(dir);
       const tsFiles = files.filter((f) => f.endsWith('.ts'));
@@ -620,13 +833,19 @@ async function main() {
       const list = await buildList(legacyDir);
       return list;
     } catch {}
+    try {
+      await fs.access(legacyRootDir);
+      const list = await buildList(legacyRootDir);
+      if (list.length > 0) return list;
+    } catch {}
     return [];
   });
 
   server.get('/api/animation-code/:sessionId/:animName', async (request, _reply) => {
     const { sessionId, animName } = request.params as any;
-    const primaryPath = resolve(SESSIONS_DIR, sessionId, 'animations', `${animName}.ts`);
+    const primaryPath = resolve(SESSIONS_DIR, sessionId, 'src', 'animations', `${animName}.ts`);
     const legacyPath = resolve(__dirname, 'sessions', sessionId, 'animations', `${animName}.ts`);
+    const legacyRootPath = resolve(SESSIONS_DIR, sessionId, 'animations', `${animName}.ts`);
     const tryRead = async (p: string) => {
       try {
         return await fs.readFile(p, 'utf-8');
@@ -638,6 +857,8 @@ async function main() {
     if (fromPrimary) return fromPrimary;
     const fromLegacy = await tryRead(legacyPath);
     if (fromLegacy) return fromLegacy;
+    const fromLegacyRoot = await tryRead(legacyRootPath);
+    if (fromLegacyRoot) return fromLegacyRoot;
     return '';
   });
 

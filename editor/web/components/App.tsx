@@ -263,7 +263,7 @@ export const App = () => {
 
     let geminiResponse = '';
 
-    eventSource.onmessage = (event) => {
+  eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
 
@@ -318,6 +318,10 @@ export const App = () => {
               ...prev,
               { type: 'gemini', text: `**错误:** ${data.message}` },
             ]);
+            // Surface a toast for visibility
+            setToast(`请求出错：${data.message}`);
+            if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+            toastTimerRef.current = window.setTimeout(() => setToast(null), 3000);
             break;
         }
       } catch (err) {
@@ -326,13 +330,21 @@ export const App = () => {
       }
     };
 
-    eventSource.onerror = () => {
-      // This is also called when the connection is closed by the server
+    eventSource.onerror = (ev) => {
+      // Network errors or stream closed. Show a user-visible notice if no final response yet.
       if (geminiResponse) {
         setMessages((prev) => [...prev, { type: 'gemini', text: geminiResponse }]);
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          { type: 'gemini', text: '**连接中断**：网络错误或服务暂时不可用，请稍后重试。' },
+        ]);
       }
+      setToast('网络错误：连接已中断');
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = window.setTimeout(() => setToast(null), 3000);
       setIsThinking(false);
-      eventSource.close();
+      try { eventSource.close(); } catch {}
     };
   };
 

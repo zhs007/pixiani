@@ -9,6 +9,12 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // Inline pixi.js so it is transformed for the test environment
+    deps: {
+      inline: ['pixi.js'],
+    },
+    // Global setup for tests; will conditionally mock pixi.js only for session runs
+    setupFiles: ['tests/setup/staging-mock-pixi.ts'],
     include: ['tests/**/*.test.ts', '.sessions/**/tests/**/*.test.ts'],
     coverage: {
       provider: 'v8',
