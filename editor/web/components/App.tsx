@@ -326,7 +326,7 @@ export const App = () => {
           case 'tool_call':
             setMessages((prev) => [
               ...prev,
-              { type: 'gemini', text: `*调用工具: \`${data.name}\`...*` },
+              { type: 'gemini', text: `正在调用工具：\`${data.name}\`...` },
             ]);
             break;
 
@@ -336,8 +336,11 @@ export const App = () => {
               data.name === 'get_allowed_files' ||
               data.name === 'read_file' ||
               data.name === 'create_animation_file' ||
+              data.name === 'create_test_file' ||
               data.name === 'run_tests'
             ) break;
+            // By default, suppress tool responses in chat; only surface important ones like publish_files
+            if (data.name !== 'publish_files') break;
             if (typeof data.response === 'string' && data.response.trim()) {
               setMessages((prev) => [...prev, { type: 'gemini', text: `工具 \`${data.name}\` 返回: ${data.response}` }]);
             }
@@ -346,6 +349,12 @@ export const App = () => {
 
           case 'final_response':
             geminiResponse = data.text;
+            // Turn off thinking state once we have a final response string
+            setIsThinking(false);
+            // Mark last preview to final to avoid duplicate append on close
+            try {
+              lastModelMsgRef.current = typeof geminiResponse === 'string' ? geminiResponse : '';
+            } catch {}
             // Reconcile typing to the exact final text
             try {
               const currentShown = typingRef.current?.text || '';
@@ -379,6 +388,7 @@ export const App = () => {
 
           case 'workflow_complete':
             const { className, filePath } = data;
+            setIsThinking(false);
             if (className && filePath) {
               import(/* @vite-ignore */ `/@fs/${filePath}`)
                 .then((mod) => {
