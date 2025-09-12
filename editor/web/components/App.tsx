@@ -50,6 +50,10 @@ export const App = () => {
   const pixiContainerRef = useRef<HTMLDivElement>(null);
   const currentObjectRef = useRef<BaseObject | null>(null);
   const lastModelMsgRef = useRef<string | null>(null);
+  // Typewriter state for streaming previews
+  const typingRef = useRef<{ index: number; text: string } | null>(null);
+  const pendingTextRef = useRef<string>('');
+  const typingTimerRef = useRef<number | null>(null);
 
   // Animation manager and UI state
   const animationManager = React.useMemo(() => new AnimationManager(), []);
@@ -273,9 +277,42 @@ export const App = () => {
             // Show streaming model thoughts after each tool round-trip; avoid duplicates
             if (data.phase === 'model_continue_end' && typeof data.responsePreview === 'string') {
               const preview = data.responsePreview.trim();
-              if (preview && lastModelMsgRef.current !== preview) {
-                lastModelMsgRef.current = preview;
-                setMessages((prev) => [...prev, { type: 'gemini', text: preview }]);
+              if (!preview) break;
+              const prevFull = lastModelMsgRef.current || '';
+              if (preview === prevFull) break;
+              // Compute delta to type
+              const delta = preview.startsWith(prevFull) ? preview.slice(prevFull.length) : preview;
+              lastModelMsgRef.current = preview;
+
+              // Ensure we have a live typing message
+              if (!typingRef.current) {
+                setMessages((prev) => {
+                  const next = [...prev, { type: 'gemini' as const, text: '' }];
+                  typingRef.current = { index: next.length - 1, text: '' };
+                  return next;
+                });
+              }
+              // Queue new delta and start the typewriter if idle
+              pendingTextRef.current += delta;
+              const tick = () => {
+                if (!pendingTextRef.current) {
+                  // Nothing to type, stop timer
+                  if (typingTimerRef.current) {
+                    window.clearInterval(typingTimerRef.current);
+                    typingTimerRef.current = null;
+                  }
+                  return;
+                }
+                // Type a few chars per tick for smoothness
+                const CHARS_PER_TICK = 3;
+                const chunk = pendingTextRef.current.slice(0, CHARS_PER_TICK);
+                pendingTextRef.current = pendingTextRef.current.slice(CHARS_PER_TICK);
+                const newText = (typingRef.current?.text || '') + chunk;
+                typingRef.current = typingRef.current ? { ...typingRef.current, text: newText } : { index: 0, text: newText };
+                setMessages((prev) => prev.map((m, i) => (i === (typingRef.current as { index: number }).index ? { ...m, text: newText } : m)));
+              };
+              if (!typingTimerRef.current) {
+                typingTimerRef.current = window.setInterval(tick, 20);
               }
             }
             break;
@@ -309,6 +346,34 @@ export const App = () => {
 
           case 'final_response':
             geminiResponse = data.text;
+            // Reconcile typing to the exact final text
+            try {
+              const currentShown = typingRef.current?.text || '';
+              if (geminiResponse && geminiResponse !== currentShown) {
+                // Append any remaining part quickly
+                const remainder = geminiResponse.startsWith(currentShown)
+                  ? geminiResponse.slice(currentShown.length)
+                  : geminiResponse;
+                pendingTextRef.current += remainder;
+                if (!typingTimerRef.current && remainder) {
+                  typingTimerRef.current = window.setInterval(() => {
+                    const CHARS_PER_TICK = 6; // finish a bit faster for final
+                    if (!pendingTextRef.current) {
+                      if (typingTimerRef.current) {
+                        window.clearInterval(typingTimerRef.current);
+                        typingTimerRef.current = null;
+                      }
+                      return;
+                    }
+                    const chunk = pendingTextRef.current.slice(0, CHARS_PER_TICK);
+                    pendingTextRef.current = pendingTextRef.current.slice(CHARS_PER_TICK);
+                    const newText = (typingRef.current?.text || '') + chunk;
+                    typingRef.current = typingRef.current ? { ...typingRef.current, text: newText } : { index: 0, text: newText };
+                    setMessages((prev) => prev.map((m, i) => (i === (typingRef.current as { index: number }).index ? { ...m, text: newText } : m)));
+                  }, 16);
+                }
+              }
+            } catch {}
             // Don't add to messages yet, wait for the stream to close
             break;
 
@@ -353,6 +418,11 @@ export const App = () => {
 
     eventSource.onerror = (ev) => {
       // Network errors or stream closed. Show a user-visible notice if no final response yet.
+      // Stop any typing interval
+      if (typingTimerRef.current) {
+        window.clearInterval(typingTimerRef.current);
+        typingTimerRef.current = null;
+      }
       if (geminiResponse && geminiResponse !== lastModelMsgRef.current) {
         setMessages((prev) => [...prev, { type: 'gemini', text: geminiResponse }]);
       } else {
@@ -371,6 +441,13 @@ export const App = () => {
 
   const handleNewTask = async () => {
     if (!sessionId) return;
+    // Stop any ongoing typing timer and reset typing state
+    if (typingTimerRef.current) {
+      window.clearInterval(typingTimerRef.current);
+      typingTimerRef.current = null;
+    }
+    typingRef.current = null;
+    pendingTextRef.current = '';
     await fetch('/api/clear_session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
