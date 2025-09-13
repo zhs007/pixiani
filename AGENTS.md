@@ -60,3 +60,30 @@ After making changes and before submitting, you MUST run the following commands 
 2.  `npm run test`
 
 If you add new dependencies, run `npm install` first. If you modify any logic, ensure the test coverage does not drop by running `npm run coverage` and inspecting the results. Any failure in these checks must be addressed before submission.
+
+## Working on the Gemini Editor (`editor/server.ts`)
+
+If your task involves modifying the Gemini animation editor, be aware of the following special considerations.
+
+### TDD Workflow for the Editor's Agent
+
+The editor's backend implements a Test-Driven Development (TDD) loop for the worker agent that generates animations. When you are modifying `editor/server.ts`, you are changing the environment in which this worker agent operates.
+
+The worker agent has access to a specific set of tools (function calls) that you, as the "meta-agent", are responsible for maintaining. These tools are:
+
+- `get_allowed_files()`: Lists existing animation and test files.
+- `read_file(filepath)`: Reads a file.
+- `create_animation_file(className, code)`: Creates the animation source file.
+- `create_test_file(className, code)`: Creates the test file.
+- `run_tests(className)`: Executes `vitest` on the generated test.
+- `update_animation_file(className, code)`: Updates the animation source.
+- `update_test_file(className, code)`: Updates the test file.
+
+### Modifying the Workflow
+
+If you need to change this workflow (e.g., by adding a new tool or changing how tests are run), you must:
+
+1.  **Update the Tool Definition:** Modify the `tools` constant in `editor/server.ts` to reflect the new function signature.
+2.  **Update the Tool Implementation:** Add or modify the corresponding helper function that implements the tool's logic.
+3.  **Update the System Prompt:** Change the `systemInstruction` constant to inform the worker agent about the new tool or workflow change.
+4.  **Verify CI:** Ensure that `npm run ci` still passes after your changes. The editor server code is type-checked and linted as part of this process.

@@ -12,19 +12,18 @@ import multipart from '@fastify/multipart';
 import path from 'path';
 import util from 'util';
 import { pipeline } from 'stream';
+import { glob } from 'glob';
+import { exec } from 'child_process';
 
 const pump = util.promisify(pipeline);
 
 // --- Setup ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-// Store sessions outside of editor/ to avoid dev server restarts on file writes
 const SESSIONS_DIR = resolve(__dirname, '../.sessions');
-// Path to sprite assets folder (served by Vite publicDir in editor/vite.config.ts)
 const ASSETS_SPRITE_DIR = resolve(__dirname, '../assets/sprite');
+const ROOT_DIR = resolve(__dirname, '..');
 
-// Optional HTTP(S) proxy for outgoing requests (e.g., Gemini API)
-// Supported envs: HTTPS_PROXY, HTTP_PROXY, ALL_PROXY, PROXY_URL
 const PROXY_URL =
   process.env.HTTPS_PROXY ||
   process.env.HTTP_PROXY ||
@@ -34,13 +33,11 @@ if (PROXY_URL) {
   try {
     setGlobalDispatcher(new ProxyAgent(PROXY_URL));
     console.warn(`[editor] Using proxy: ${PROXY_URL}`);
-  } catch (e) {
-    console.warn('[editor] Failed to set proxy agent:', e);
+  } catch (e: any) {
+    console.warn('[editor] Failed to set proxy agent:', e.message);
   }
 }
 
-// In-memory store for session chat histories.
-// In a real app, this would be a database.
 const sessions = new Map<string, any[]>();
 
 // --- Gemini AI Configuration ---
@@ -54,92 +51,56 @@ if (!API_KEY) {
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({
   model: GEMINI_MODEL,
-  // The system instruction is the core prompt for the AI
-  systemInstruction: `You are an expert TypeScript developer specializing in Pixi.js animations. Your task is to create a new animation class based on a user's description of the desired EFFECT. Implement it robustly in this project without pitfalls. Follow these exact rules so the file compiles and works in our editor:
-1) Imports:
-   - Use: \`import * as PIXI from 'pixi.js'\`.
-   - Use: \`import { BaseAnimate } from 'pixi-animation-library'\`.
-   - Do NOT import from relative core paths like '../core/BaseAnimate'.
-2) BaseAnimate contract (mandatory):
-   - Export a single named class that \`extends BaseAnimate\`.
-   - Include: \`public static readonly animationName: string\` (PascalCase, short).
-   - Include: \`public static getRequiredSpriteCount(): number\` (>= 1 if sprites are used).
-  - Implement EXACTLY: \`protected reset(): void\` (initialize/allocate state, set up meshes/containers, and prepare to start). Do not rename it.
-   - Implement: \`public update(deltaTime: number): void\` with all per-frame logic.
-   - Do NOT override \`play()\`, \`pause()\`, \`resume()\`, or \`setState()\`. Use the provided lifecycle.
-  - Do NOT call \`play()\` or \`setState()\` inside \`constructor\` or \`reset()\`. \`reset()\` must be side-effect free w.r.t. state; only allocate/initialize. Changing state in \`reset()\` causes infinite loops because \`BaseAnimate.play()\` calls \`reset()\`.
-  - If you override \`stop()\`, keep it minimal (e.g., restore sprite visibility, hide/destroy temporary nodes) and then call \`super.stop()\` OR explicitly set \`this.setState('IDLE')\`. Avoid side effects beyond cleanup.
-   - Access sprites via \`this.sprites\`. The editor sets \`anchor.set(0.5)\` and calls \`play()\` automatically.
-   - Do NOT import any other libraries.
-3) Mesh-specific best practices (if your effect involves mesh/vertex warping):
-   - Prefer \`new PIXI.MeshPlane({ texture, verticesX, verticesY })\` for evenly distributed grids.
-   - Do NOT rely on \`mesh.width/height\` for positioning/normalizing. Use geometry (\`aPosition\`) bounds instead.
-   - To align mesh with the original sprite:
-     - Copy transform: \`mesh.position/scale/rotation\` from the source sprite.
-     - Emulate anchor using pivot: \`mesh.pivot.set(minX + w*anchor.x, minY + h*anchor.y)\`.
-     - Hide the source sprite during play (\`sprite.visible = false\`), and restore visibility on \`stop()\`.
-   - Vertex updates:
-     - Read/write the \`aPosition\` buffer (Float32Array) and call \`buffer.update()\` each frame after modifying vertices.
-     - Compute and cache original vertices for baseline calculations.
-     - Normalize across geometry bounds (min/max) — not via transformed sizes.
-   - Performance:
-     - Choose a sensible grid (e.g., 32x32/64x64) unless the user explicitly asks for very dense meshes.
-     - Avoid per-vertex randomization unless the user asks for it.
-4) Control flow and lifecycle:
-   - Use \`this.state\` via \`play/pause/resume/stop\`. Set \`loop\` and \`speed\` only if needed.
-  - When the effect reaches its terminal state, call \`this.setState('ENDED')\` from \`update()\`. If \`loop\` is true, it will restart via \`play()\`.
-   - Keep public API surface minimal and avoid side effects beyond the passed sprites/object.
-  - Texture readiness: In \`reset()\`, guard against missing sprites or invalid textures. If \`!sprite || !sprite.texture?.valid\`, skip heavy setup and let \`update()\` early-return until ready. Do not change state from \`reset()\`.
-5) File output:
-   - The file must export only that class.
-   - After you output the code, you MUST call the \`create_animation_file\` function to save it (use the class name for the filename).
+  systemInstruction: `You are an expert TypeScript developer specializing in Pixi.js animations. Your primary task is to implement new animation classes based on user descriptions. You must follow a strict Test-Driven Development (TDD) process.
 
-Examples of valid animations (concise and correct w.r.t. BaseAnimate):
-// Example A: Single-sprite bounce scale
-export class BounceScale extends BaseAnimate {
-  public static readonly animationName = 'BounceScale';
-  public static getRequiredSpriteCount(): number { return 1; }
-  private t = 0;
-  protected reset(): void {
-    this.t = 0;
-  }
-  public update(dt: number): void {
-    if (!this.isPlaying) return;
-    this.t += dt;
-    const s = 0.75 + Math.sin(this.t * Math.PI * 2) * 0.25; // 0.5..1.0
-    this.sprites[0].scale.set(s);
-  }
-}
+**Your Workflow:**
 
-// Example B: Two-sprite orbit
-export class TwinOrbit extends BaseAnimate {
-  public static readonly animationName = 'TwinOrbit';
-  public static getRequiredSpriteCount(): number { return 2; }
-  private t = 0;
-  protected reset(): void {
-    this.t = 0;
-  }
-  public update(dt: number): void {
-    if (!this.isPlaying) return;
-    this.t += dt;
-    const r = 50;
-    this.sprites[0].x = Math.cos(this.t) * r;
-    this.sprites[0].y = Math.sin(this.t) * r;
-    this.sprites[1].x = Math.cos(this.t + Math.PI) * r;
-    this.sprites[1].y = Math.sin(this.t + Math.PI) * r;
-  }
-}
+1.  **Understand the Requirements:** Read the user's request for a new animation.
+2.  **Explore Existing Code:** Use the \`get_allowed_files()\` tool to see existing animations and tests. Use the \`read_file(filepath)\` tool to understand how they are implemented. This is crucial for consistency. Do not generate a class name that already exists. Before writing your own tests, read at least one reference test from \`tests/animations/FadeAnimation.test.ts\` or \`tests/animations/ComplexPopAnimation.test.ts\` to mirror their mocking style and structure.
+3.  **Write the Animation Code:** Write the TypeScript code for the new animation class. The class name must be in PascalCase. Call \`create_animation_file(className, code)\` to save it.
+4.  **Write a Test:** Create a comprehensive test file for your new animation using Vitest. The test should cover the animation's lifecycle, state changes, and visual properties. Call \`create_test_file(className, code)\` to save it.
+5.  **Run Tests:** Execute \`run_tests(className)\` to validate your implementation.
+6.  **Debug and Refine:**
+    *   If the tests fail with a normal error, the tool will return the error output. Analyze the errors and use \`update_animation_file()\` or \`update_test_file()\` to fix the code. Repeat the \`run_tests()\` and update cycle until all tests pass.
+    *   If \`run_tests()\` returns a message starting with \`SYSTEM_ERROR:\`, it means there is a problem with the testing environment itself. **Do not try to fix this.** Your task is finished. Report the full, detailed system error message to the user as your final answer so they can debug it.
+7.  **Publish:** Once \`run_tests()\` returns a success message (including success with warnings), call \`publish_files(className)\` to make the files available to the editor UI.
+8.  **Completion:** Inform the user that the animation has been created, tested, and published successfully.
 
-Common pitfalls to avoid (must not do these):
-- Missing \`protected reset(): void\` (required by BaseAnimate). Do not rename to init/start/setup.
-- Overriding \`play()\` or calling \`reset()\` manually from update — let BaseAnimate manage lifecycle.
-- Using \`mesh.width/height\` to normalize vertices — use geometry bounds from \`aPosition\`.
+**Strict Rules for Animation Code:**
 
-\n*** End Patch
+1.  **Imports:**
+    *   Use: \`import * as PIXI from 'pixi.js'\`.
+    *   Use: \`import { BaseAnimate } from 'pixi-animation-library'\`.
+    *   Do NOT import from relative core paths like '../core/BaseAnimate'.
+2.  **BaseAnimate Contract (Mandatory):**
+    *   Export a single named class that \`extends BaseAnimate\`.
+    *   Include: \`public static readonly animationName: string\` (PascalCase, must match the class name).
+    *   Include: \`public static getRequiredSpriteCount(): number\` (>= 1 if sprites are used).
+    *   Implement \`protected reset(): void\` for initialization.
+    *   Implement \`public update(deltaTime: number): void\` for frame logic.
+    *   Do NOT override \`play()\`, \`pause()\`, \`resume()\`, or \`setState()\`.
+    *   Call \`this.setState('ENDED')\` from \`update()\` to finish the animation.
+3.  **File Output:** The file must contain only the single exported class.
 
-Important:
-- The user describes the EFFECT; implement it with the above engineering guardrails.
-- Be conversational and explain briefly what you created before calling the tool.`,
+**Strict Rules for Test Code:**
+
+1.  **Imports (VERY IMPORTANT):**
+    *   Use \`import { describe, it, expect, vi, beforeEach } from 'vitest';\`
+    *   **For the Animation Class you are testing:** You MUST use a relative path. The path from the test file to the animation file is always the same: \`import { YourClassName } from '../../src/animations/YourClassName';\`
+    *   **For ALL other library code (\`BaseObject\`, \`BaseAnimate\`, etc.):** You MUST use the 'pixi-animation-library' alias. Example: \`import { BaseObject, BaseAnimate } from 'pixi-animation-library';\`
+    *   Do NOT use relative paths like \`../../src/core/BaseObject.ts\`. Only use the alias.
+    *   You can import the class-under-test and the library code in the same statement: \`import { YourClassName, BaseObject } from 'pixi-animation-library';\` is WRONG. It must be two separate imports as described above.
+2.  **Structure:**
+    *   Use a \`describe\` block for the animation class.
+    *   Use \`beforeEach\` to set up a clean instance of your animation before each test.
+  *   Write multiple \`it\` blocks to test different aspects: initial state, play(), update() logic, looping, and completion. At minimum, include at least one \`it\` with an \`expect\` so the file never reports "no tests".
+
+3.  **Mocking PIXI (MANDATORY for tests that construct PIXI objects):**
+  *   Follow the examples in \`tests/animations/FadeAnimation.test.ts\` and \`tests/animations/ComplexPopAnimation.test.ts\`.
+  *   Use \`vi.mock('pixi.js', async () => { const actual = await vi.importActual('pixi.js'); return { ...actual, Sprite: vi.fn().mockImplementation(factory) }; })\`.
+  *   Only mock what you need (commonly \`Sprite\` and simple methods like \`anchor.set\`, \`scale.set\`). Keep the mock minimal, deterministic, and per-test reset with \`vi.clearAllMocks()\`.
+  *   Do NOT rely on global or implicit pixi behavior. Tests must be self-contained and deterministic.
+`,
 });
 
 const generationConfig = {
@@ -168,13 +129,38 @@ const safetySettings = [
   },
 ];
 
-// --- Gemini Function Calling Tool ---
+// --- Agent continuation controls ---
+const CONTINUE_TIMEOUT_MS = Number(process.env.AGENT_CONTINUE_TIMEOUT_MS ?? 30000);
+const CONTINUE_RETRIES = Number(process.env.AGENT_CONTINUE_RETRIES ?? 1);
+
 const tools: any = [
   {
     functionDeclarations: [
       {
+        name: 'get_allowed_files',
+        description:
+          'Returns a list of existing animation and test files that can be read for reference.',
+        parameters: { type: 'OBJECT', properties: {} },
+      },
+      {
+        name: 'read_file',
+        description: 'Reads the content of a single specified file from the allowed list.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            filepath: {
+              type: 'STRING',
+              description:
+                'The full path of the file to read (e.g., "src/animations/ScaleAnimation.ts").',
+            },
+          },
+          required: ['filepath'],
+        },
+      },
+      {
         name: 'create_animation_file',
-        description: 'Creates a new TypeScript animation file with the provided code.',
+        description:
+          'Creates a new TypeScript animation file with the provided code. The class name must not already exist.',
         parameters: {
           type: 'OBJECT',
           properties: {
@@ -191,9 +177,41 @@ const tools: any = [
         },
       },
       {
-        name: 'update_animation_file',
+        name: 'create_test_file',
+        description: 'Creates a new Vitest test file for the corresponding animation class.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            className: {
+              type: 'STRING',
+              description: 'The name of the animation class being tested (PascalCase).',
+            },
+            code: {
+              type: 'STRING',
+              description: 'The full TypeScript code for the test file.',
+            },
+          },
+          required: ['className', 'code'],
+        },
+      },
+      {
+        name: 'run_tests',
         description:
-          'Updates an existing TypeScript animation file with new code (same class name).',
+          'Runs the tests for the specified animation class and returns the output. This should only be called after both the animation and test files have been created.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            className: {
+              type: 'STRING',
+              description: 'The name of the animation class to test (PascalCase).',
+            },
+          },
+          required: ['className'],
+        },
+      },
+      {
+        name: 'update_animation_file',
+        description: 'Updates an existing TypeScript animation file with new code.',
         parameters: {
           type: 'OBJECT',
           properties: {
@@ -209,21 +227,346 @@ const tools: any = [
           required: ['className', 'code'],
         },
       },
+      {
+        name: 'update_test_file',
+        description: 'Updates an existing Vitest test file with new code.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            className: {
+              type: 'STRING',
+              description: 'The name of the animation class being tested (PascalCase).',
+            },
+            code: {
+              type: 'STRING',
+              description: 'The full, updated TypeScript code for the test file.',
+            },
+          },
+          required: ['className', 'code'],
+        },
+      },
+      {
+        name: 'publish_files',
+        description:
+          'Publishes the staged animation and test files for the given className into the session directories so the editor can load them.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            className: {
+              type: 'STRING',
+              description: 'The name of the animation class to publish (PascalCase).',
+            },
+          },
+          required: ['className'],
+        },
+      },
     ],
   },
 ];
 
-// (Validation removed by user request)
+// --- Tool Implementations ---
+
+async function get_allowed_files(sessionId?: string): Promise<string> {
+  const animationFiles = await glob('src/animations/*.ts');
+  const testFiles = await glob('tests/animations/*.test.ts');
+  const coreFiles = await glob('src/core/*.ts');
+  const allFiles = [...animationFiles, ...testFiles, ...coreFiles];
+  const out = `Allowed files:\n${allFiles.join('\n')}`;
+  if (sessionId) {
+    try {
+      await logToolCall(sessionId, 'get_allowed_files', {}, { result: allFiles });
+    } catch {}
+  }
+  return out;
+}
+
+async function read_file(filepath: string, sessionId?: string): Promise<string> {
+  const resolvedPath = resolve(ROOT_DIR, filepath);
+  if (
+    !resolvedPath.startsWith(ROOT_DIR) ||
+    (!filepath.endsWith('.ts') && !filepath.endsWith('.test.ts'))
+  ) {
+    const out = 'Error: Access denied. You can only read project TypeScript files.';
+    if (sessionId) {
+      try {
+        await logToolCall(sessionId, 'read_file', { filepath }, { output: out });
+      } catch {}
+    }
+    return out;
+  }
+  try {
+    const contents = await fs.readFile(resolvedPath, 'utf-8');
+    if (sessionId) {
+      try {
+        // Log full contents for transparency as requested
+        await logToolCall(sessionId, 'read_file', { filepath }, { output: contents });
+      } catch {}
+    }
+    return contents;
+  } catch (e: any) {
+    const out = `Error: Could not read file: ${e.message}`;
+    if (sessionId) {
+      try {
+        await logToolCall(sessionId, 'read_file', { filepath }, { error: e.message });
+      } catch {}
+    }
+    return out;
+  }
+}
+
+async function write_file(
+  sessionId: string,
+  type: 'animation' | 'test',
+  className: string,
+  code: string,
+): Promise<{ success: boolean; message: string; filePath: string }> {
+  const baseDir = resolve(SESSIONS_DIR, sessionId, 'staging');
+  const dir =
+    type === 'animation'
+      ? resolve(baseDir, 'src', 'animations')
+      : resolve(baseDir, 'tests', 'animations');
+
+  await fs.mkdir(dir, { recursive: true });
+  const filePath = resolve(dir, `${className}${type === 'test' ? '.test' : ''}.ts`);
+
+  try {
+    // Delete the file first to ensure a clean write and avoid caching issues.
+    try {
+      await fs.unlink(filePath);
+    } catch (e: any) {
+      if (e.code !== 'ENOENT') {
+        // Ignore "file not found" errors, but throw others.
+        throw e;
+      }
+    }
+    await fs.writeFile(filePath, code);
+    // Log the tool call
+    try {
+      const toolName = type === 'animation' ? 'create_animation_file' : 'create_test_file';
+      await logToolCall(sessionId, toolName, { className }, { success: true, filePath });
+    } catch {}
+    return {
+      success: true,
+      message: `File ${path.basename(filePath)} saved successfully.`,
+      filePath,
+    };
+  } catch (error: any) {
+    try {
+      const toolName = type === 'animation' ? 'create_animation_file' : 'create_test_file';
+      await logToolCall(
+        sessionId,
+        toolName,
+        { className },
+        { success: false, message: error.message },
+      );
+    } catch {}
+    return { success: false, message: `Error saving file: ${error.message}`, filePath };
+  }
+}
+
+// Helper: log a tool call (input and output) to a session-scoped JSONL file for debugging
+async function logToolCall(sessionId: string, toolName: string, input: any, output: any) {
+  try {
+    const logDir = resolve(SESSIONS_DIR, sessionId, 'logs');
+    await fs.mkdir(logDir, { recursive: true });
+    const entry = {
+      timestamp: new Date().toISOString(),
+      tool: toolName,
+      input,
+      output,
+    };
+    const logPath = resolve(logDir, 'tool_calls.log');
+    // Append as JSON line
+    await fs.appendFile(logPath, JSON.stringify(entry) + '\n');
+  } catch (e: any) {
+    console.error(`[${sessionId}] Failed to write tool call log: ${e?.message || e}`);
+  }
+}
+
+function run_tests(sessionId: string, className: string): Promise<string> {
+  return new Promise((promiseResolve) => {
+    const testFilePath = resolve(
+      SESSIONS_DIR,
+      sessionId,
+      'staging',
+      'tests',
+      'animations',
+      `${className}.test.ts`,
+    );
+    const command = `SESSION_TESTS=1 npx vitest run "${testFilePath}" --root "${ROOT_DIR}"`;
+
+    console.warn(`[${sessionId}] Running tests for ${className}: ${command}`);
+
+    exec(command, (error, stdout, stderr) => {
+      const combinedOutput = stdout + stderr;
+
+      // Build the user-facing result message (same logic as before)
+      let resultMessage: string;
+      // Detect unrecoverable environment errors and return SYSTEM_ERROR so the agent stops trying to fix code
+      if (
+        combinedOutput.includes('No test files found') ||
+        combinedOutput.includes('Failed to resolve import') ||
+        combinedOutput.includes('Cannot convert a Symbol value to a string') ||
+        combinedOutput.includes('Cannot convert a Symbol value to string')
+      ) {
+        resultMessage = `SYSTEM_ERROR: Test runner failed due to an environment issue (e.g., missing file, bad import path, or incompatible native/module build). Do not attempt to fix this by modifying code. Stop and report the issue. Original error:\n\n${combinedOutput}`;
+      } else if (error) {
+        resultMessage = `Tests failed for ${className}:\n\nSTDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`;
+      } else if (stderr) {
+        resultMessage = `Tests completed for ${className} (with warnings):\n\nSTDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`;
+      } else {
+        resultMessage = `Tests passed successfully for ${className}!\n\n${stdout}`;
+      }
+
+      // Persist the full runner output to a session-scoped log to help debugging later.
+      const logPath = resolve(SESSIONS_DIR, sessionId, 'logs', `${className}_run_tests.log`);
+      // Ensure directory exists and write the log (fire-and-forget, but capture failures)
+      fs.mkdir(dirname(logPath), { recursive: true })
+        .then(() => fs.writeFile(logPath, combinedOutput))
+        .then(async () => {
+          console.warn(`[${sessionId}] Test run output written to ${logPath}`);
+          // Log the tool call (input and summarized output)
+          try {
+            await logToolCall(
+              sessionId,
+              'run_tests',
+              { className, command },
+              { resultMessage, logPath },
+            );
+          } catch (e: any) {
+            console.error(`[${sessionId}] Failed to log run_tests call: ${e?.message || e}`);
+          }
+        })
+        .catch((e: any) =>
+          console.error(`[${sessionId}] Failed to write test run log: ${e?.message || e}`),
+        )
+        .finally(() => {
+          // Resolve the promise with the same message the agent originally received
+          promiseResolve(resultMessage);
+        });
+    });
+  });
+}
+
+async function publish_files(
+  sessionId: string,
+  className: string,
+): Promise<{ success: boolean; finalPath?: string }> {
+  // Helper to check file existence
+  const exists = async (p: string) => {
+    try {
+      await fs.access(p);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const stagingSrcPath = resolve(
+    SESSIONS_DIR,
+    sessionId,
+    'staging',
+    'src',
+    'animations',
+    `${className}.ts`,
+  );
+  const finalSrcPath = resolve(SESSIONS_DIR, sessionId, 'src', 'animations', `${className}.ts`);
+
+  const stagingTestPath = resolve(
+    SESSIONS_DIR,
+    sessionId,
+    'staging',
+    'tests',
+    'animations',
+    `${className}.test.ts`,
+  );
+  const finalTestPath = resolve(
+    SESSIONS_DIR,
+    sessionId,
+    'tests',
+    'animations',
+    `${className}.test.ts`,
+  );
+
+  try {
+    // Ensure final directories exist
+    await fs.mkdir(dirname(finalSrcPath), { recursive: true });
+    await fs.mkdir(dirname(finalTestPath), { recursive: true });
+
+    const haveStagingSrc = await exists(stagingSrcPath);
+    const haveStagingTest = await exists(stagingTestPath);
+    const haveFinalSrc = await exists(finalSrcPath);
+    const haveFinalTest = await exists(finalTestPath);
+
+    // Always publish/overwrite src if a staged src exists
+    if (haveStagingSrc) {
+      await fs.copyFile(stagingSrcPath, finalSrcPath);
+      // remove staged copy to keep staging clean
+      try {
+        await fs.unlink(stagingSrcPath);
+      } catch {}
+    }
+
+    // Publish/overwrite test if a staged test exists (tests are optional)
+    if (haveStagingTest) {
+      await fs.copyFile(stagingTestPath, finalTestPath);
+      try {
+        await fs.unlink(stagingTestPath);
+      } catch {}
+    }
+
+    const srcNowExists = haveStagingSrc || haveFinalSrc || (await exists(finalSrcPath));
+    const testNowExists = haveStagingTest || haveFinalTest || (await exists(finalTestPath));
+    const testWasMissing = !haveStagingTest && !haveFinalTest && !testNowExists;
+
+    if (!srcNowExists) {
+      // Cannot publish without the animation source file
+      const errMsg = `Source file missing for ${className} (staging and final not found)`;
+      console.error(`[${sessionId}] ${errMsg}`);
+      try {
+        await logToolCall(
+          sessionId,
+          'publish_files',
+          { className },
+          { success: false, error: errMsg },
+        );
+      } catch {}
+      return { success: false };
+    }
+
+    const logPayload: any = { success: true, finalPath: finalSrcPath };
+    if (testWasMissing)
+      logPayload.warning = 'Test file not found in staging or final; published animation only.';
+
+    const mode =
+      haveStagingSrc && haveFinalSrc ? 'overwritten' : haveStagingSrc ? 'published' : 'kept';
+    console.warn(
+      `[${sessionId}] Published files for ${className} (src ${mode})${testWasMissing ? ' (animation only, no test updated)' : ''}`,
+    );
+    try {
+      await logToolCall(sessionId, 'publish_files', { className }, { ...logPayload, mode });
+    } catch {}
+    return { success: true, finalPath: finalSrcPath };
+  } catch (e: any) {
+    console.error(`[${sessionId}] Failed to publish files for ${className}: ${e.message}`);
+    try {
+      await logToolCall(
+        sessionId,
+        'publish_files',
+        { className },
+        { success: false, error: e.message },
+      );
+    } catch {}
+    return { success: false };
+  }
+}
 
 // --- Fastify Server ---
 async function main() {
   await fs.mkdir(SESSIONS_DIR, { recursive: true });
   const server = Fastify({ logger: true });
 
-  // Register multipart handler
   server.register(multipart);
 
-  // Serve uploaded sprite assets at /sprite/*
   server.register(fastifyStatic as any, {
     root: ASSETS_SPRITE_DIR,
     prefix: '/sprite/',
@@ -231,28 +574,21 @@ async function main() {
     decorateReply: false,
   });
 
-  // --- Vite Frontend ---
   await server.register(fastifyVite, {
-    // Point to the editor directory so @fastify/vite finds editor/vite.config.ts
     root: resolve(__dirname),
     dev: true,
     spa: true,
   });
 
-  // --- API Routes ---
-
-  // Asset Management
   server.get('/api/assets', async (request, reply) => {
     const assetsDir = ASSETS_SPRITE_DIR;
     try {
       await fs.access(assetsDir);
       const files = await fs.readdir(assetsDir);
-      // We only want image files, and filter out system files like .DS_Store
       const imageFiles = files.filter((file) => /\.(png|jpe?g|gif)$/i.test(file));
       reply.send(imageFiles);
     } catch (error) {
       server.log.error(error, 'Could not list assets in ' + assetsDir);
-      // If the directory doesn't exist, return an empty array
       reply.send([]);
     }
   });
@@ -264,10 +600,9 @@ async function main() {
         return reply.status(400).send({ error: 'No file uploaded.' });
       }
 
-      // Ensure the filename is safe
       const safeFilename = path.basename(data.filename);
       const assetsDir = ASSETS_SPRITE_DIR;
-      await fs.mkdir(assetsDir, { recursive: true }); // Ensure directory exists
+      await fs.mkdir(assetsDir, { recursive: true });
 
       const filePath = path.join(assetsDir, safeFilename);
       await pump(data.file, createWriteStream(filePath));
@@ -280,68 +615,309 @@ async function main() {
     }
   });
 
-  server.post('/api/chat', async (request, reply) => {
-    try {
-      const body = request.body as any;
-      const _history = body?.history ?? [];
-      const { prompt } = body as { prompt: string };
-      let { sessionId } = body as { sessionId?: string };
+  server.get('/api/chat', (request, reply) => {
+    // --- SSE Setup ---
+    reply.raw.setHeader('Content-Type', 'text/event-stream');
+    reply.raw.setHeader('Connection', 'keep-alive');
+    reply.raw.setHeader('Cache-Control', 'no-cache');
+    reply.raw.setHeader('Access-Control-Allow-Origin', '*'); // Allow CORS for dev
 
-      if (!sessionId) {
-        sessionId = crypto.randomUUID();
-        sessions.set(sessionId, []);
-      } else if (!sessions.has(sessionId)) {
-        sessions.set(sessionId, []);
-      }
-      const chatHistory = sessions.get(sessionId)!;
+    const writeEvent = (data: object) => {
+      reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
 
-      const chat = model.startChat({
-        history: chatHistory,
-        generationConfig,
-        safetySettings,
-        tools,
-      });
+    // --- Main async logic ---
+    const run = async () => {
+      let createdClassName: string | null = null;
+      try {
+        const { prompt, sessionId: querySessionId } = request.query as {
+          prompt: string;
+          sessionId?: string;
+        };
+        let sessionId = querySessionId;
 
-      const result = await chat.sendMessage(prompt);
-      const geminiResponse: any = result.response as any;
-
-      let responseText = geminiResponse.text();
-
-      // Handle function calls (no validation)
-      const processCalls = async (resp: any) => {
-        const calls: any[] = resp.functionCalls?.() ?? [];
-        if (!calls.length) return resp.text();
-        let lastText = resp.text();
-        for (const call of calls) {
-          if (call.name !== 'create_animation_file' && call.name !== 'update_animation_file')
-            continue;
-          const { className, code } = call.args || {};
-          if (!className || !code) continue;
-
-          // First write
-          const sessionDir = resolve(SESSIONS_DIR, sessionId, 'animations');
-          await fs.mkdir(sessionDir, { recursive: true });
-          const filePath = resolve(sessionDir, `${className}.ts`);
-          await fs.writeFile(filePath, code);
-
-          server.log.info(`Animation file created: ${filePath}`);
-          lastText = `I have created the animation file \`${className}.ts\`. You can now select it from the dropdown to preview it.`;
+        if (!sessionId) {
+          sessionId = crypto.randomUUID();
+          sessions.set(sessionId, []);
+          writeEvent({ type: 'session_id', sessionId });
+        } else if (!sessions.has(sessionId)) {
+          sessions.set(sessionId, []);
         }
-        return lastText;
-      };
+        const chatHistory = sessions.get(sessionId)!;
 
-      responseText = await processCalls(geminiResponse);
+        const chat = model.startChat({
+          history: chatHistory,
+          generationConfig,
+          safetySettings,
+          tools,
+        });
 
-      // Update history in our session store
-      chatHistory.push({ role: 'user', parts: [{ text: prompt }] } as any);
-      chatHistory.push({ role: 'model', parts: [{ text: responseText }] } as any);
+        chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
+        let result = await chat.sendMessage(prompt);
 
-      reply.send({ response: responseText, sessionId });
-    } catch (error) {
-      server.log.error(error, 'Error processing chat request');
-      reply.status(500).send({ error: 'Failed to process chat request' });
-    }
+        const MAX_STEPS = 10;
+        for (let i = 0; i < MAX_STEPS; i++) {
+          const functionCalls = result.response.functionCalls?.();
+          if (!functionCalls || functionCalls.length === 0) {
+            // No more function calls, agent is done or requires input
+            const finalText = result.response.text();
+            // Log full final response to workflow log for auditing
+            await logWorkflow(sessionId, 'final_response', { text: finalText });
+            writeEvent({ type: 'final_response', text: finalText });
+            chatHistory.push({ role: 'model', parts: [{ text: finalText }] });
+            return; // End of loop
+          }
+
+          const call = functionCalls[0] as any;
+          server.log.info(`[${sessionId}] Executing tool call: ${call.name}`, call.args);
+          writeEvent({ type: 'tool_call', name: call.name, args: call.args });
+
+          // --- Tool Execution Logic ---
+          let toolResponseContent;
+          switch (call.name) {
+            case 'get_allowed_files':
+              toolResponseContent = await get_allowed_files(sessionId);
+              break;
+            case 'read_file':
+              toolResponseContent = await read_file(call.args.filepath, sessionId);
+              break;
+            case 'create_animation_file': {
+              const res = await write_file(
+                sessionId,
+                'animation',
+                call.args.className,
+                call.args.code,
+              );
+              toolResponseContent = res.message;
+              if (res.success && !createdClassName) {
+                createdClassName = call.args.className;
+              }
+              break;
+            }
+            case 'create_test_file': {
+              const res = await write_file(sessionId, 'test', call.args.className, call.args.code);
+              toolResponseContent = res.message;
+              break;
+            }
+            case 'update_animation_file': {
+              const res = await write_file(
+                sessionId,
+                'animation',
+                call.args.className,
+                call.args.code,
+              );
+              toolResponseContent = res.message;
+              break;
+            }
+            case 'update_test_file': {
+              const res = await write_file(sessionId, 'test', call.args.className, call.args.code);
+              toolResponseContent = res.message;
+              break;
+            }
+            case 'run_tests':
+              toolResponseContent = await run_tests(sessionId, call.args.className);
+              break;
+            case 'publish_files':
+              {
+                const res = await publish_files(sessionId, call.args.className);
+                toolResponseContent = res.success
+                  ? `Published ${call.args.className} successfully.`
+                  : `Failed to publish ${call.args.className}.`;
+                if (!res.success) {
+                  // Also surface an error event for the UI to display clearly
+                  writeEvent({ type: 'error', message: `发布失败：${call.args.className}` });
+                }
+              }
+              break;
+            default:
+              toolResponseContent = `Unknown tool: ${call.name}`;
+          }
+          // --- End Tool Execution ---
+
+          writeEvent({ type: 'tool_response', name: call.name, response: toolResponseContent });
+
+          // --- Publish on Success ---
+          if (
+            call.name === 'run_tests' &&
+            (toolResponseContent.startsWith('Tests passed successfully') ||
+              (toolResponseContent.startsWith('Tests completed for') &&
+                toolResponseContent.includes('(with warnings)')))
+          ) {
+            const classNameToPublish = call.args.className;
+            server.log.info(
+              `[${sessionId}] Tests passed for ${classNameToPublish}, attempting to publish...`,
+            );
+            // Surface a synthetic tool_call to keep UI consistent when auto-publishing
+            writeEvent({
+              type: 'tool_call',
+              name: 'publish_files',
+              args: { className: classNameToPublish },
+            });
+            const publishResult = await publish_files(sessionId, classNameToPublish);
+            writeEvent({
+              type: 'tool_response',
+              name: 'publish_files',
+              response: publishResult.success
+                ? `Published ${classNameToPublish} successfully.`
+                : `Failed to publish ${classNameToPublish}.`,
+            });
+            if (publishResult.success && publishResult.finalPath) {
+              writeEvent({
+                type: 'workflow_complete',
+                className: classNameToPublish,
+                filePath: publishResult.finalPath,
+              });
+            } else {
+              writeEvent({
+                type: 'error',
+                message: `Agent task succeeded, but failed to publish files for ${classNameToPublish}.`,
+              });
+            }
+          }
+
+          // Send the tool response back to the model
+          chatHistory.push({
+            role: 'model',
+            parts: [{ functionCall: call }],
+          });
+          chatHistory.push({
+            role: 'function',
+            parts: [
+              { functionResponse: { name: call.name, response: { content: toolResponseContent } } },
+            ],
+          });
+
+          {
+            const contStart = Date.now();
+            await logWorkflow(sessionId, 'model_continue_start', {
+              retries: CONTINUE_RETRIES,
+              timeoutMs: CONTINUE_TIMEOUT_MS,
+            });
+            writeEvent({
+              type: 'heartbeat',
+              phase: 'model_continue_start',
+              retries: CONTINUE_RETRIES,
+              timeoutMs: CONTINUE_TIMEOUT_MS,
+            });
+            try {
+              result = await sendWithTimeoutAndRetry(
+                () => chat.sendMessage(''),
+                CONTINUE_TIMEOUT_MS,
+                CONTINUE_RETRIES,
+                async (attempt) => {
+                  await logWorkflow(sessionId, 'model_continue_attempt_start', { attempt });
+                  writeEvent({ type: 'heartbeat', phase: 'model_continue_attempt_start', attempt });
+                },
+                async (attempt: number, err: any) => {
+                  await logWorkflow(sessionId, 'model_continue_attempt_error', {
+                    attempt,
+                    error: err?.message || String(err),
+                  });
+                  writeEvent({
+                    type: 'heartbeat',
+                    phase: 'model_continue_attempt_error',
+                    attempt,
+                    error: (err?.message || String(err)).slice(0, 300),
+                  });
+                },
+              );
+              const contEnd = Date.now();
+              let preview = '';
+              try {
+                preview = result?.response?.text?.() ?? '';
+              } catch {}
+              await logWorkflow(sessionId, 'model_continue_end', {
+                durationMs: contEnd - contStart,
+                responsePreview: preview,
+              });
+              writeEvent({
+                type: 'heartbeat',
+                phase: 'model_continue_end',
+                durationMs: contEnd - contStart,
+                responsePreview: preview,
+              });
+            } catch (e: any) {
+              const contEnd = Date.now();
+              await logWorkflow(sessionId, 'model_continue_error', {
+                durationMs: contEnd - contStart,
+                error: e?.message || String(e),
+              });
+              writeEvent({
+                type: 'heartbeat',
+                phase: 'model_continue_error',
+                durationMs: contEnd - contStart,
+                error: (e?.message || String(e)).slice(0, 300),
+              });
+              throw e;
+            }
+          }
+
+          if (i === MAX_STEPS - 1) {
+            writeEvent({ type: 'error', message: 'Workflow exceeded maximum steps (10).' });
+            server.log.warn(`[${sessionId}] Workflow terminated due to exceeding max steps.`);
+            return;
+          }
+        }
+      } catch (error: any) {
+        server.log.error(error, 'Error processing chat stream');
+        writeEvent({ type: 'error', message: `An unexpected error occurred: ${error.message}` });
+      } finally {
+        reply.raw.end(); // Close the SSE connection
+      }
+    };
+
+    run();
   });
+  // Append workflow events to a session-scoped JSONL log
+  async function logWorkflow(sessionId: string, event: string, payload: any) {
+    try {
+      const logDir = resolve(SESSIONS_DIR, sessionId, 'logs');
+      await fs.mkdir(logDir, { recursive: true });
+      const logPath = resolve(logDir, 'workflow.log');
+      const entry = { timestamp: new Date().toISOString(), event, ...payload };
+      await fs.appendFile(logPath, JSON.stringify(entry) + '\n');
+    } catch (e: any) {
+      console.error(`[${sessionId}] Failed to write workflow log: ${e?.message || e}`);
+    }
+  }
+
+  // Promise timeout with optional retries and hooks
+  async function sendWithTimeoutAndRetry<T>(
+    fn: () => Promise<T>,
+    timeoutMs: number,
+    retries: number,
+    onAttemptStart?: (attempt: number) => void | Promise<void>,
+    onAttemptError?: (attempt: number, err: unknown) => void | Promise<void>,
+  ): Promise<T> {
+    let attempt = 0;
+    while (true) {
+      attempt++;
+      try {
+        if (onAttemptStart) await onAttemptStart(attempt);
+        const res = await promiseWithTimeout(fn(), timeoutMs);
+        return res;
+      } catch (e) {
+        if (onAttemptError) await onAttemptError(attempt, e);
+        if (attempt > retries) throw e;
+      }
+    }
+  }
+
+  function promiseWithTimeout<T>(p: Promise<T>, timeoutMs: number): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs);
+      p.then(
+        (v) => {
+          clearTimeout(t);
+          resolve(v);
+        },
+        (e) => {
+          clearTimeout(t);
+          reject(e);
+        },
+      );
+    });
+  }
 
   server.post('/api/clear_session', async (request, _reply) => {
     const { sessionId } = request.body as any;
@@ -354,8 +930,9 @@ async function main() {
 
   server.get('/api/animations/:sessionId', async (request, _reply) => {
     const { sessionId } = request.params as any;
-    const sessionDir = resolve(SESSIONS_DIR, sessionId, 'animations');
+    const sessionDir = resolve(SESSIONS_DIR, sessionId, 'src', 'animations');
     const legacyDir = resolve(__dirname, 'sessions', sessionId, 'animations');
+    const legacyRootDir = resolve(SESSIONS_DIR, sessionId, 'animations');
     const buildList = async (dir: string) => {
       const files = await fs.readdir(dir);
       const tsFiles = files.filter((f) => f.endsWith('.ts'));
@@ -366,19 +943,24 @@ async function main() {
       const list = await buildList(sessionDir);
       if (list.length > 0) return list;
     } catch {}
-    // Fallback to legacy folder under editor/
     try {
       await fs.access(legacyDir);
       const list = await buildList(legacyDir);
       return list;
+    } catch {}
+    try {
+      await fs.access(legacyRootDir);
+      const list = await buildList(legacyRootDir);
+      if (list.length > 0) return list;
     } catch {}
     return [];
   });
 
   server.get('/api/animation-code/:sessionId/:animName', async (request, _reply) => {
     const { sessionId, animName } = request.params as any;
-    const primaryPath = resolve(SESSIONS_DIR, sessionId, 'animations', `${animName}.ts`);
+    const primaryPath = resolve(SESSIONS_DIR, sessionId, 'src', 'animations', `${animName}.ts`);
     const legacyPath = resolve(__dirname, 'sessions', sessionId, 'animations', `${animName}.ts`);
+    const legacyRootPath = resolve(SESSIONS_DIR, sessionId, 'animations', `${animName}.ts`);
     const tryRead = async (p: string) => {
       try {
         return await fs.readFile(p, 'utf-8');
@@ -390,10 +972,11 @@ async function main() {
     if (fromPrimary) return fromPrimary;
     const fromLegacy = await tryRead(legacyPath);
     if (fromLegacy) return fromLegacy;
+    const fromLegacyRoot = await tryRead(legacyRootPath);
+    if (fromLegacyRoot) return fromLegacyRoot;
     return '';
   });
 
-  // --- Frontend Catch-all ---
   server.get('/*', (req, reply) => {
     reply.html();
   });

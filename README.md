@@ -218,6 +218,15 @@ Notes:
 
 MIT License - see LICENSE file for details.
 
+## Milestones
+
+For a detailed, per-plan milestone table (plans 001–022) and verification status, see `jules/milestones.md`.
+
+Related reports in the `jules/` directory:
+
+- Plans index and instructions: `jules/README.md`
+- Phase summary (this milestone snapshot): `jules/phase001-report.md`
+
 ## Contributing
 
 1. Fork the repository

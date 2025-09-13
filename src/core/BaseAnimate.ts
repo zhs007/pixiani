@@ -55,16 +55,16 @@ export abstract class BaseAnimate implements IAnimate {
   protected setState(newState: AnimationState): void {
     if (this.state === newState) return;
 
-    // If the animation has ended and should loop, restart it.
-    if (newState === 'ENDED' && this.loop) {
-      this.play();
-    } else {
-      this.state = newState;
-    }
+    this.state = newState;
 
-    // Fire onComplete callback if the animation has truly ended (and is not looping)
     if (this.state === 'ENDED') {
-      this.onComplete?.();
+      // If the animation is set to loop, restart it.
+      if (this.loop) {
+        this.play();
+      } else {
+        // Otherwise, fire the onComplete callback as it has truly finished.
+        this.onComplete?.();
+      }
     }
   }
 
