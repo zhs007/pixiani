@@ -4,7 +4,7 @@ This report details the diagnosis and resolution of a critical module alias reso
 
 ## 1. Task Summary
 
-Following the previous fix to the test runner's file discovery, a deeper issue was uncovered. The agent's generated tests were failing with the error: `Failed to resolve import "pixi-animation-library"`. This indicated that while the test *file* was being found, the test *runner* could not resolve the project's internal library alias when executing code within the sandboxed `.sessions` directory.
+Following the previous fix to the test runner's file discovery, a deeper issue was uncovered. The agent's generated tests were failing with the error: `Failed to resolve import "pixi-animation-library"`. This indicated that while the test _file_ was being found, the test _runner_ could not resolve the project's internal library alias when executing code within the sandboxed `.sessions` directory.
 
 The goal of this task was to diagnose the root cause of this module resolution failure and implement a permanent fix to ensure the agent's TDD workflow is fully functional.
 
@@ -15,6 +15,7 @@ The solution required a deep dive into the project's Vite and Vitest configurati
 ### 2.1. Diagnosis
 
 The investigation proceeded as follows:
+
 1.  I first checked `vitest.config.ts` and `tsconfig.json` for an alias definition, but none was found.
 2.  I then inspected `package.json` and found that the project's `name` is `pixi-animation-library`. This allows for internal imports via an `npm`-managed symlink in `node_modules`, but this was not being picked up by the test runner in the sandboxed context.
 3.  The breakthrough came from inspecting `demo/vite.config.ts`. This file, used for the project's demonstration page, contained the explicit alias definition:
@@ -31,10 +32,10 @@ The investigation proceeded as follows:
 
 With a clear diagnosis, the fix was targeted and simple.
 
-*   I modified the `run_tests` function in `editor/server.ts`.
-*   I updated the `vitest` command to include the `--config` flag, explicitly telling it to use the configuration file from the `demo` directory.
-*   **Old command:** `npx vitest run "${testFilePath}" --root "${ROOT_DIR}"`
-*   **New command:** `npx vitest run "${testFilePath}" --root "${ROOT_DIR}" --config demo/vite.config.ts`
+- I modified the `run_tests` function in `editor/server.ts`.
+- I updated the `vitest` command to include the `--config` flag, explicitly telling it to use the configuration file from the `demo` directory.
+- **Old command:** `npx vitest run "${testFilePath}" --root "${ROOT_DIR}"`
+- **New command:** `npx vitest run "${testFilePath}" --root "${ROOT_DIR}" --config demo/vite.config.ts`
 
 This change ensures that `vitest` always loads the correct configuration, inherits the crucial `resolve.alias` setting, and can successfully run tests from any location, including the agent's sandboxed session directories.
 

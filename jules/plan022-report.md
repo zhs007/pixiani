@@ -16,7 +16,7 @@ The solution was to move away from fragile relative paths and fully embrace the 
 
 I quickly realized that simply telling the agent to use a different relative path (e.g., `../../../src/...`) would be a brittle, temporary fix. The correct, long-term solution was to use the `pixi-animation-library` alias that is configured in `vitest.config.ts`.
 
-However, a key insight was that this could not apply to *all* imports. The new animation class being tested by the agent (e.g., `YourClassName`) only exists within the temporary session directory and is not part of the main library build. Therefore, it *must* be imported via a relative path.
+However, a key insight was that this could not apply to _all_ imports. The new animation class being tested by the agent (e.g., `YourClassName`) only exists within the temporary session directory and is not part of the main library build. Therefore, it _must_ be imported via a relative path.
 
 This led to the final, hybrid solution: use aliases for the stable library code and a relative path for the code under test.
 
@@ -24,11 +24,11 @@ This led to the final, hybrid solution: use aliases for the stable library code 
 
 The core of the fix was a major clarification of the import rules in the agent's system prompt in `editor/server.ts`.
 
-*   **Old Rules:** The previous instructions were ambiguous and mixed different import styles.
-*   **New Rules:** The prompt now provides very clear, two-part instructions for writing test files:
-    1.  **For the Animation Class being tested:** The agent MUST use a relative path, which is always `../../src/animations/YourClassName`.
-    2.  **For ALL other library code (`BaseObject`, `BaseAnimate`, etc.):** The agent MUST use the `'pixi-animation-library'` alias.
-*   The prompt was enhanced with examples, bolding, and a counter-example of what *not* to do, to make the instructions as unambiguous as possible.
+- **Old Rules:** The previous instructions were ambiguous and mixed different import styles.
+- **New Rules:** The prompt now provides very clear, two-part instructions for writing test files:
+  1.  **For the Animation Class being tested:** The agent MUST use a relative path, which is always `../../src/animations/YourClassName`.
+  2.  **For ALL other library code (`BaseObject`, `BaseAnimate`, etc.):** The agent MUST use the `'pixi-animation-library'` alias.
+- The prompt was enhanced with examples, bolding, and a counter-example of what _not_ to do, to make the instructions as unambiguous as possible.
 
 ### 2.3. Verifying Library Exports
 

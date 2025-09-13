@@ -59,8 +59,11 @@ export const App = () => {
 
   // Animation manager and UI state
   const animationManager = React.useMemo(() => new AnimationManager(), []);
-  const [availableAnimations, setAvailableAnimations] = useState<AnimateClass[]>(standardAnimations);
-  const [selectedAnimationName, setSelectedAnimationName] = useState<string>(standardAnimations[0]?.animationName);
+  const [availableAnimations, setAvailableAnimations] =
+    useState<AnimateClass[]>(standardAnimations);
+  const [selectedAnimationName, setSelectedAnimationName] = useState<string>(
+    standardAnimations[0]?.animationName,
+  );
 
   // Toast helpers
   const [toast, setToast] = useState<string | null>(null);
@@ -266,12 +269,12 @@ export const App = () => {
     setIsThinking(true);
 
     const url = `/api/chat?prompt=${encodeURIComponent(currentPrompt)}&sessionId=${sessionId || ''}`;
-  expectedCloseRef.current = false;
-  const eventSource = new EventSource(url);
+    expectedCloseRef.current = false;
+    const eventSource = new EventSource(url);
 
     let geminiResponse = '';
 
-  eventSource.onmessage = (event) => {
+    eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
 
@@ -311,8 +314,16 @@ export const App = () => {
                 const chunk = pendingTextRef.current.slice(0, CHARS_PER_TICK);
                 pendingTextRef.current = pendingTextRef.current.slice(CHARS_PER_TICK);
                 const newText = (typingRef.current?.text || '') + chunk;
-                typingRef.current = typingRef.current ? { ...typingRef.current, text: newText } : { index: 0, text: newText };
-                setMessages((prev) => prev.map((m, i) => (i === (typingRef.current as { index: number }).index ? { ...m, text: newText } : m)));
+                typingRef.current = typingRef.current
+                  ? { ...typingRef.current, text: newText }
+                  : { index: 0, text: newText };
+                setMessages((prev) =>
+                  prev.map((m, i) =>
+                    i === (typingRef.current as { index: number }).index
+                      ? { ...m, text: newText }
+                      : m,
+                  ),
+                );
               };
               if (!typingTimerRef.current) {
                 typingTimerRef.current = window.setInterval(tick, 20);
@@ -320,11 +331,12 @@ export const App = () => {
             }
             break;
           }
-          case 'session_id':
+          case 'session_id': {
             const newSid = data.sessionId;
             setSessionId(newSid);
             localStorage.setItem('sessionId', newSid);
             break;
+          }
 
           case 'tool_call':
             setMessages((prev) => [
@@ -341,16 +353,20 @@ export const App = () => {
               data.name === 'create_animation_file' ||
               data.name === 'create_test_file' ||
               data.name === 'run_tests'
-            ) break;
+            )
+              break;
             // By default, suppress tool responses in chat; only surface important ones like publish_files
             if (data.name !== 'publish_files') break;
             if (typeof data.response === 'string' && data.response.trim()) {
-              setMessages((prev) => [...prev, { type: 'gemini', text: `工具 \`${data.name}\` 返回: ${data.response}` }]);
+              setMessages((prev) => [
+                ...prev,
+                { type: 'gemini', text: `工具 \`${data.name}\` 返回: ${data.response}` },
+              ]);
             }
             break;
           }
 
-          case 'final_response':
+          case 'final_response': {
             geminiResponse = data.text;
             // Turn off thinking state once we have a final response string
             setIsThinking(false);
@@ -380,19 +396,30 @@ export const App = () => {
                     const chunk = pendingTextRef.current.slice(0, CHARS_PER_TICK);
                     pendingTextRef.current = pendingTextRef.current.slice(CHARS_PER_TICK);
                     const newText = (typingRef.current?.text || '') + chunk;
-                    typingRef.current = typingRef.current ? { ...typingRef.current, text: newText } : { index: 0, text: newText };
-                    setMessages((prev) => prev.map((m, i) => (i === (typingRef.current as { index: number }).index ? { ...m, text: newText } : m)));
+                    typingRef.current = typingRef.current
+                      ? { ...typingRef.current, text: newText }
+                      : { index: 0, text: newText };
+                    setMessages((prev) =>
+                      prev.map((m, i) =>
+                        i === (typingRef.current as { index: number }).index
+                          ? { ...m, text: newText }
+                          : m,
+                      ),
+                    );
                   }, 16);
                 }
               }
             } catch {}
             // Proactively close the SSE; this is an expected normal end
             expectedCloseRef.current = true;
-            try { eventSource.close(); } catch {}
+            try {
+              eventSource.close();
+            } catch {}
             // Don't add to messages yet, wait for the stream to close
             break;
+          }
 
-          case 'workflow_complete':
+          case 'workflow_complete': {
             const { className, filePath } = data;
             setIsThinking(false);
             if (className && filePath) {
@@ -414,12 +441,10 @@ export const App = () => {
                 });
             }
             break;
+          }
 
           case 'error':
-            setMessages((prev) => [
-              ...prev,
-              { type: 'gemini', text: `**错误:** ${data.message}` },
-            ]);
+            setMessages((prev) => [...prev, { type: 'gemini', text: `**错误:** ${data.message}` }]);
             // Surface a toast for visibility
             setToast(`请求出错：${data.message}`);
             if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
@@ -432,7 +457,7 @@ export const App = () => {
       }
     };
 
-    eventSource.onerror = (ev) => {
+    eventSource.onerror = (_ev) => {
       // Network errors or stream closed. Show a user-visible notice if no final response yet.
       // Stop any typing interval
       if (typingTimerRef.current) {
@@ -442,7 +467,9 @@ export const App = () => {
       // If we intentionally closed after final_response, do not show a network error
       if (expectedCloseRef.current) {
         setIsThinking(false);
-        try { eventSource.close(); } catch {}
+        try {
+          eventSource.close();
+        } catch {}
         return;
       }
       if (geminiResponse && geminiResponse !== lastModelMsgRef.current) {
@@ -457,7 +484,9 @@ export const App = () => {
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
       toastTimerRef.current = window.setTimeout(() => setToast(null), 3000);
       setIsThinking(false);
-      try { eventSource.close(); } catch {}
+      try {
+        eventSource.close();
+      } catch {}
     };
   };
 

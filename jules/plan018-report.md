@@ -14,20 +14,20 @@ The resolution process involved a deep dive into the core animation logic, the t
 
 ### 2.1. Initial `BaseAnimate` Bug and Fix
 
-*   **Diagnosis:** I first examined `src/core/BaseAnimate.ts`. The bug was in the `setState` method. When an animation was set to loop (the default behavior), the code would immediately call `this.play()` upon being told to enter the `ENDED` state, which would instantly set the state back to `PLAYING`. The state was never allowed to be `ENDED`.
-*   **Fix:** I refactored the `setState` method to correctly set the state to `ENDED` first, and *then* check the `loop` property. I also found this change caused a regression in another test, which expected the `onComplete` callback *not* to fire when looping. I corrected the logic to only fire `onComplete` if the animation was not looping.
+- **Diagnosis:** I first examined `src/core/BaseAnimate.ts`. The bug was in the `setState` method. When an animation was set to loop (the default behavior), the code would immediately call `this.play()` upon being told to enter the `ENDED` state, which would instantly set the state back to `PLAYING`. The state was never allowed to be `ENDED`.
+- **Fix:** I refactored the `setState` method to correctly set the state to `ENDED` first, and _then_ check the `loop` property. I also found this change caused a regression in another test, which expected the `onComplete` callback _not_ to fire when looping. I corrected the logic to only fire `onComplete` if the animation was not looping.
 
 ### 2.2. Uncovering and Fixing Environment Issues
 
 The initial fix was not sufficient, as running the agent's test case revealed deeper configuration problems.
 
-*   **Module Alias Resolution:** The test failed because it could not resolve the `pixi-animation-library` import alias. I discovered this alias was only defined in a config file for the demo app (`demo/vite.config.ts`) and not loaded by the main test runner.
-*   **Fix:** I centralized the alias definition by adding it to the root `vitest.config.ts`. This makes the configuration more robust and ensures that all test runs, whether initiated by `npm run test` or the agent's `run_tests` tool, can correctly resolve the alias.
+- **Module Alias Resolution:** The test failed because it could not resolve the `pixi-animation-library` import alias. I discovered this alias was only defined in a config file for the demo app (`demo/vite.config.ts`) and not loaded by the main test runner.
+- **Fix:** I centralized the alias definition by adding it to the root `vitest.config.ts`. This makes the configuration more robust and ensures that all test runs, whether initiated by `npm run test` or the agent's `run_tests` tool, can correctly resolve the alias.
 
 ### 2.3. Fixing the Agent's Test Case
 
-*   **Final Diagnosis:** After fixing the environment, the test *still* failed with the original `expected 'PLAYING' to be 'ENDED'` error. The final insight was that the agent's test itself was flawed. It did not account for the fact that animations loop by default.
-*   **Fix:** I applied a one-line fix to the agent's generated test file (`ComplexRotationAnimation.test.ts`), setting `animation.loop = false;` before the final assertion. This allowed the `setState` logic to correctly transition to the `ENDED` state without immediately restarting.
+- **Final Diagnosis:** After fixing the environment, the test _still_ failed with the original `expected 'PLAYING' to be 'ENDED'` error. The final insight was that the agent's test itself was flawed. It did not account for the fact that animations loop by default.
+- **Fix:** I applied a one-line fix to the agent's generated test file (`ComplexRotationAnimation.test.ts`), setting `animation.loop = false;` before the final assertion. This allowed the `setState` logic to correctly transition to the `ENDED` state without immediately restarting.
 
 ## 3. Validation and Final Outcome
 

@@ -227,8 +227,6 @@ Related reports in the `jules/` directory:
 - Plans index and instructions: `jules/README.md`
 - Phase summary (this milestone snapshot): `jules/phase001-report.md`
 
-
-
 ## Contributing
 
 1. Fork the repository

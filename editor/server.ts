@@ -247,7 +247,8 @@ const tools: any = [
       },
       {
         name: 'publish_files',
-        description: 'Publishes the staged animation and test files for the given className into the session directories so the editor can load them.',
+        description:
+          'Publishes the staged animation and test files for the given className into the session directories so the editor can load them.',
         parameters: {
           type: 'OBJECT',
           properties: {
@@ -297,8 +298,8 @@ async function read_file(filepath: string, sessionId?: string): Promise<string> 
     const contents = await fs.readFile(resolvedPath, 'utf-8');
     if (sessionId) {
       try {
-  // Log full contents for transparency as requested
-  await logToolCall(sessionId, 'read_file', { filepath }, { output: contents });
+        // Log full contents for transparency as requested
+        await logToolCall(sessionId, 'read_file', { filepath }, { output: contents });
       } catch {}
     }
     return contents;
@@ -352,7 +353,12 @@ async function write_file(
   } catch (error: any) {
     try {
       const toolName = type === 'animation' ? 'create_animation_file' : 'create_test_file';
-      await logToolCall(sessionId, toolName, { className }, { success: false, message: error.message });
+      await logToolCall(
+        sessionId,
+        toolName,
+        { className },
+        { success: false, message: error.message },
+      );
     } catch {}
     return { success: false, message: `Error saving file: ${error.message}`, filePath };
   }
@@ -387,9 +393,9 @@ function run_tests(sessionId: string, className: string): Promise<string> {
       'animations',
       `${className}.test.ts`,
     );
-  const command = `SESSION_TESTS=1 npx vitest run "${testFilePath}" --root "${ROOT_DIR}"`;
+    const command = `SESSION_TESTS=1 npx vitest run "${testFilePath}" --root "${ROOT_DIR}"`;
 
-    console.info(`[${sessionId}] Running tests for ${className}: ${command}`);
+    console.warn(`[${sessionId}] Running tests for ${className}: ${command}`);
 
     exec(command, (error, stdout, stderr) => {
       const combinedOutput = stdout + stderr;
@@ -403,8 +409,7 @@ function run_tests(sessionId: string, className: string): Promise<string> {
         combinedOutput.includes('Cannot convert a Symbol value to a string') ||
         combinedOutput.includes('Cannot convert a Symbol value to string')
       ) {
-        resultMessage =
-          `SYSTEM_ERROR: Test runner failed due to an environment issue (e.g., missing file, bad import path, or incompatible native/module build). Do not attempt to fix this by modifying code. Stop and report the issue. Original error:\n\n${combinedOutput}`;
+        resultMessage = `SYSTEM_ERROR: Test runner failed due to an environment issue (e.g., missing file, bad import path, or incompatible native/module build). Do not attempt to fix this by modifying code. Stop and report the issue. Original error:\n\n${combinedOutput}`;
       } else if (error) {
         resultMessage = `Tests failed for ${className}:\n\nSTDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`;
       } else if (stderr) {
@@ -413,21 +418,28 @@ function run_tests(sessionId: string, className: string): Promise<string> {
         resultMessage = `Tests passed successfully for ${className}!\n\n${stdout}`;
       }
 
-  // Persist the full runner output to a session-scoped log to help debugging later.
+      // Persist the full runner output to a session-scoped log to help debugging later.
       const logPath = resolve(SESSIONS_DIR, sessionId, 'logs', `${className}_run_tests.log`);
       // Ensure directory exists and write the log (fire-and-forget, but capture failures)
       fs.mkdir(dirname(logPath), { recursive: true })
         .then(() => fs.writeFile(logPath, combinedOutput))
         .then(async () => {
-          console.info(`[${sessionId}] Test run output written to ${logPath}`);
+          console.warn(`[${sessionId}] Test run output written to ${logPath}`);
           // Log the tool call (input and summarized output)
           try {
-            await logToolCall(sessionId, 'run_tests', { className, command }, { resultMessage, logPath });
+            await logToolCall(
+              sessionId,
+              'run_tests',
+              { className, command },
+              { resultMessage, logPath },
+            );
           } catch (e: any) {
             console.error(`[${sessionId}] Failed to log run_tests call: ${e?.message || e}`);
           }
         })
-        .catch((e: any) => console.error(`[${sessionId}] Failed to write test run log: ${e?.message || e}`))
+        .catch((e: any) =>
+          console.error(`[${sessionId}] Failed to write test run log: ${e?.message || e}`),
+        )
         .finally(() => {
           // Resolve the promise with the same message the agent originally received
           promiseResolve(resultMessage);
@@ -442,7 +454,12 @@ async function publish_files(
 ): Promise<{ success: boolean; finalPath?: string }> {
   // Helper to check file existence
   const exists = async (p: string) => {
-    try { await fs.access(p); return true; } catch { return false; }
+    try {
+      await fs.access(p);
+      return true;
+    } catch {
+      return false;
+    }
   };
   const stagingSrcPath = resolve(
     SESSIONS_DIR,
@@ -484,13 +501,17 @@ async function publish_files(
     if (haveStagingSrc) {
       await fs.copyFile(stagingSrcPath, finalSrcPath);
       // remove staged copy to keep staging clean
-      try { await fs.unlink(stagingSrcPath); } catch {}
+      try {
+        await fs.unlink(stagingSrcPath);
+      } catch {}
     }
 
     // Publish/overwrite test if a staged test exists (tests are optional)
     if (haveStagingTest) {
       await fs.copyFile(stagingTestPath, finalTestPath);
-      try { await fs.unlink(stagingTestPath); } catch {}
+      try {
+        await fs.unlink(stagingTestPath);
+      } catch {}
     }
 
     const srcNowExists = haveStagingSrc || haveFinalSrc || (await exists(finalSrcPath));
@@ -501,21 +522,39 @@ async function publish_files(
       // Cannot publish without the animation source file
       const errMsg = `Source file missing for ${className} (staging and final not found)`;
       console.error(`[${sessionId}] ${errMsg}`);
-      try { await logToolCall(sessionId, 'publish_files', { className }, { success: false, error: errMsg }); } catch {}
+      try {
+        await logToolCall(
+          sessionId,
+          'publish_files',
+          { className },
+          { success: false, error: errMsg },
+        );
+      } catch {}
       return { success: false };
     }
 
     const logPayload: any = { success: true, finalPath: finalSrcPath };
-    if (testWasMissing) logPayload.warning = 'Test file not found in staging or final; published animation only.';
+    if (testWasMissing)
+      logPayload.warning = 'Test file not found in staging or final; published animation only.';
 
-    const mode = haveStagingSrc && haveFinalSrc ? 'overwritten' : (haveStagingSrc ? 'published' : 'kept');
-    console.info(`[${sessionId}] Published files for ${className} (src ${mode})${testWasMissing ? ' (animation only, no test updated)' : ''}`);
-    try { await logToolCall(sessionId, 'publish_files', { className }, { ...logPayload, mode }); } catch {}
+    const mode =
+      haveStagingSrc && haveFinalSrc ? 'overwritten' : haveStagingSrc ? 'published' : 'kept';
+    console.warn(
+      `[${sessionId}] Published files for ${className} (src ${mode})${testWasMissing ? ' (animation only, no test updated)' : ''}`,
+    );
+    try {
+      await logToolCall(sessionId, 'publish_files', { className }, { ...logPayload, mode });
+    } catch {}
     return { success: true, finalPath: finalSrcPath };
   } catch (e: any) {
     console.error(`[${sessionId}] Failed to publish files for ${className}: ${e.message}`);
     try {
-      await logToolCall(sessionId, 'publish_files', { className }, { success: false, error: e.message });
+      await logToolCall(
+        sessionId,
+        'publish_files',
+        { className },
+        { success: false, error: e.message },
+      );
     } catch {}
     return { success: false };
   }
@@ -629,7 +668,7 @@ async function main() {
             return; // End of loop
           }
 
-    const call = functionCalls[0] as any;
+          const call = functionCalls[0] as any;
           server.log.info(`[${sessionId}] Executing tool call: ${call.name}`, call.args);
           writeEvent({ type: 'tool_call', name: call.name, args: call.args });
 
@@ -637,13 +676,18 @@ async function main() {
           let toolResponseContent;
           switch (call.name) {
             case 'get_allowed_files':
-                  toolResponseContent = await get_allowed_files(sessionId);
+              toolResponseContent = await get_allowed_files(sessionId);
               break;
             case 'read_file':
-                  toolResponseContent = await read_file(call.args.filepath, sessionId);
+              toolResponseContent = await read_file(call.args.filepath, sessionId);
               break;
             case 'create_animation_file': {
-              const res = await write_file(sessionId, 'animation', call.args.className, call.args.code);
+              const res = await write_file(
+                sessionId,
+                'animation',
+                call.args.className,
+                call.args.code,
+              );
               toolResponseContent = res.message;
               if (res.success && !createdClassName) {
                 createdClassName = call.args.className;
@@ -656,7 +700,12 @@ async function main() {
               break;
             }
             case 'update_animation_file': {
-              const res = await write_file(sessionId, 'animation', call.args.className, call.args.code);
+              const res = await write_file(
+                sessionId,
+                'animation',
+                call.args.className,
+                call.args.code,
+              );
               toolResponseContent = res.message;
               break;
             }
@@ -690,15 +739,20 @@ async function main() {
           // --- Publish on Success ---
           if (
             call.name === 'run_tests' &&
-            (
-              toolResponseContent.startsWith('Tests passed successfully') ||
-              (toolResponseContent.startsWith('Tests completed for') && toolResponseContent.includes('(with warnings)'))
-            )
+            (toolResponseContent.startsWith('Tests passed successfully') ||
+              (toolResponseContent.startsWith('Tests completed for') &&
+                toolResponseContent.includes('(with warnings)')))
           ) {
             const classNameToPublish = call.args.className;
-            server.log.info(`[${sessionId}] Tests passed for ${classNameToPublish}, attempting to publish...`);
+            server.log.info(
+              `[${sessionId}] Tests passed for ${classNameToPublish}, attempting to publish...`,
+            );
             // Surface a synthetic tool_call to keep UI consistent when auto-publishing
-            writeEvent({ type: 'tool_call', name: 'publish_files', args: { className: classNameToPublish } });
+            writeEvent({
+              type: 'tool_call',
+              name: 'publish_files',
+              args: { className: classNameToPublish },
+            });
             const publishResult = await publish_files(sessionId, classNameToPublish);
             writeEvent({
               type: 'tool_response',
@@ -728,13 +782,23 @@ async function main() {
           });
           chatHistory.push({
             role: 'function',
-            parts: [{ functionResponse: { name: call.name, response: { content: toolResponseContent } } }],
+            parts: [
+              { functionResponse: { name: call.name, response: { content: toolResponseContent } } },
+            ],
           });
 
           {
             const contStart = Date.now();
-            await logWorkflow(sessionId, 'model_continue_start', { retries: CONTINUE_RETRIES, timeoutMs: CONTINUE_TIMEOUT_MS });
-            writeEvent({ type: 'heartbeat', phase: 'model_continue_start', retries: CONTINUE_RETRIES, timeoutMs: CONTINUE_TIMEOUT_MS });
+            await logWorkflow(sessionId, 'model_continue_start', {
+              retries: CONTINUE_RETRIES,
+              timeoutMs: CONTINUE_TIMEOUT_MS,
+            });
+            writeEvent({
+              type: 'heartbeat',
+              phase: 'model_continue_start',
+              retries: CONTINUE_RETRIES,
+              timeoutMs: CONTINUE_TIMEOUT_MS,
+            });
             try {
               result = await sendWithTimeoutAndRetry(
                 () => chat.sendMessage(''),
@@ -745,19 +809,45 @@ async function main() {
                   writeEvent({ type: 'heartbeat', phase: 'model_continue_attempt_start', attempt });
                 },
                 async (attempt: number, err: any) => {
-                  await logWorkflow(sessionId, 'model_continue_attempt_error', { attempt, error: err?.message || String(err) });
-                  writeEvent({ type: 'heartbeat', phase: 'model_continue_attempt_error', attempt, error: (err?.message || String(err)).slice(0, 300) });
-                }
+                  await logWorkflow(sessionId, 'model_continue_attempt_error', {
+                    attempt,
+                    error: err?.message || String(err),
+                  });
+                  writeEvent({
+                    type: 'heartbeat',
+                    phase: 'model_continue_attempt_error',
+                    attempt,
+                    error: (err?.message || String(err)).slice(0, 300),
+                  });
+                },
               );
               const contEnd = Date.now();
               let preview = '';
-              try { preview = result?.response?.text?.() ?? ''; } catch {}
-              await logWorkflow(sessionId, 'model_continue_end', { durationMs: contEnd - contStart, responsePreview: preview });
-              writeEvent({ type: 'heartbeat', phase: 'model_continue_end', durationMs: contEnd - contStart, responsePreview: preview });
+              try {
+                preview = result?.response?.text?.() ?? '';
+              } catch {}
+              await logWorkflow(sessionId, 'model_continue_end', {
+                durationMs: contEnd - contStart,
+                responsePreview: preview,
+              });
+              writeEvent({
+                type: 'heartbeat',
+                phase: 'model_continue_end',
+                durationMs: contEnd - contStart,
+                responsePreview: preview,
+              });
             } catch (e: any) {
               const contEnd = Date.now();
-              await logWorkflow(sessionId, 'model_continue_error', { durationMs: contEnd - contStart, error: e?.message || String(e) });
-              writeEvent({ type: 'heartbeat', phase: 'model_continue_error', durationMs: contEnd - contStart, error: (e?.message || String(e)).slice(0, 300) });
+              await logWorkflow(sessionId, 'model_continue_error', {
+                durationMs: contEnd - contStart,
+                error: e?.message || String(e),
+              });
+              writeEvent({
+                type: 'heartbeat',
+                phase: 'model_continue_error',
+                durationMs: contEnd - contStart,
+                error: (e?.message || String(e)).slice(0, 300),
+              });
               throw e;
             }
           }
@@ -778,47 +868,56 @@ async function main() {
 
     run();
   });
-// Append workflow events to a session-scoped JSONL log
-async function logWorkflow(sessionId: string, event: string, payload: any) {
-  try {
-    const logDir = resolve(SESSIONS_DIR, sessionId, 'logs');
-    await fs.mkdir(logDir, { recursive: true });
-    const logPath = resolve(logDir, 'workflow.log');
-    const entry = { timestamp: new Date().toISOString(), event, ...payload };
-    await fs.appendFile(logPath, JSON.stringify(entry) + '\n');
-  } catch (e: any) {
-    console.error(`[${sessionId}] Failed to write workflow log: ${e?.message || e}`);
-  }
-}
-
-// Promise timeout with optional retries and hooks
-async function sendWithTimeoutAndRetry<T>(
-  fn: () => Promise<T>,
-  timeoutMs: number,
-  retries: number,
-  onAttemptStart?: (attempt: number) => void | Promise<void>,
-  onAttemptError?: (attempt: number, err: unknown) => void | Promise<void>,
-): Promise<T> {
-  let attempt = 0;
-  while (true) {
-    attempt++;
+  // Append workflow events to a session-scoped JSONL log
+  async function logWorkflow(sessionId: string, event: string, payload: any) {
     try {
-      if (onAttemptStart) await onAttemptStart(attempt);
-      const res = await promiseWithTimeout(fn(), timeoutMs);
-      return res;
-    } catch (e) {
-      if (onAttemptError) await onAttemptError(attempt, e);
-      if (attempt > retries) throw e;
+      const logDir = resolve(SESSIONS_DIR, sessionId, 'logs');
+      await fs.mkdir(logDir, { recursive: true });
+      const logPath = resolve(logDir, 'workflow.log');
+      const entry = { timestamp: new Date().toISOString(), event, ...payload };
+      await fs.appendFile(logPath, JSON.stringify(entry) + '\n');
+    } catch (e: any) {
+      console.error(`[${sessionId}] Failed to write workflow log: ${e?.message || e}`);
     }
   }
-}
 
-function promiseWithTimeout<T>(p: Promise<T>, timeoutMs: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs);
-    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
-  });
-}
+  // Promise timeout with optional retries and hooks
+  async function sendWithTimeoutAndRetry<T>(
+    fn: () => Promise<T>,
+    timeoutMs: number,
+    retries: number,
+    onAttemptStart?: (attempt: number) => void | Promise<void>,
+    onAttemptError?: (attempt: number, err: unknown) => void | Promise<void>,
+  ): Promise<T> {
+    let attempt = 0;
+    while (true) {
+      attempt++;
+      try {
+        if (onAttemptStart) await onAttemptStart(attempt);
+        const res = await promiseWithTimeout(fn(), timeoutMs);
+        return res;
+      } catch (e) {
+        if (onAttemptError) await onAttemptError(attempt, e);
+        if (attempt > retries) throw e;
+      }
+    }
+  }
+
+  function promiseWithTimeout<T>(p: Promise<T>, timeoutMs: number): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs);
+      p.then(
+        (v) => {
+          clearTimeout(t);
+          resolve(v);
+        },
+        (e) => {
+          clearTimeout(t);
+          reject(e);
+        },
+      );
+    });
+  }
 
   server.post('/api/clear_session', async (request, _reply) => {
     const { sessionId } = request.body as any;

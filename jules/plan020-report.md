@@ -14,12 +14,12 @@ The root cause was hypothesized to be a file caching issue within the `vitest` t
 
 To solve this, I implemented a more forceful and robust file update strategy.
 
-*   **"Delete-then-Write" Strategy:** I modified the core `write_file` utility function in `editor/server.ts`. This function is used by all of the agent's file manipulation tools (`create_...`, `update_...`).
-*   **Implementation:** Before writing the new content to a file path, the function now first attempts to explicitly delete the file at that path using `fs.unlink`.
-    *   This operation is wrapped in a `try/catch` block.
-    *   If the error is `ENOENT` (file not found), it is safely ignored, as this is the expected behavior for a `create_animation_file` call.
-    *   Any other error during the deletion is thrown.
-*   **Effect:** This "delete-then-write" approach ensures that any existing file handles or caches associated with the old file are invalidated. When the new file is written, it is guaranteed to be a fresh version that the test runner must read from disk.
+- **"Delete-then-Write" Strategy:** I modified the core `write_file` utility function in `editor/server.ts`. This function is used by all of the agent's file manipulation tools (`create_...`, `update_...`).
+- **Implementation:** Before writing the new content to a file path, the function now first attempts to explicitly delete the file at that path using `fs.unlink`.
+  - This operation is wrapped in a `try/catch` block.
+  - If the error is `ENOENT` (file not found), it is safely ignored, as this is the expected behavior for a `create_animation_file` call.
+  - Any other error during the deletion is thrown.
+- **Effect:** This "delete-then-write" approach ensures that any existing file handles or caches associated with the old file are invalidated. When the new file is written, it is guaranteed to be a fresh version that the test runner must read from disk.
 
 ## 3. Final Outcome
 

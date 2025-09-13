@@ -26,13 +26,13 @@ The system prompt for the Gemini model was completely rewritten to instruct the 
 
 A suite of new function-calling tools was implemented to empower the agent:
 
-*   `get_allowed_files()`: Scans the `src` and `tests` directories and returns a list of readable files.
-*   `read_file(filepath)`: Reads a specific file from the allowed list.
-*   `create_animation_file(className, code)`: Saves a new animation file to a temporary session directory.
-*   `create_test_file(className, code)`: Saves a new test file to a temporary session directory.
-*   `update_animation_file(className, code)`: Updates an existing animation file in the session directory.
-*   `update_test_file(className, code)`: Updates an existing test file in the session directory.
-*   `run_tests(className)`: Executes the tests for the specified animation within the sandboxed session environment and returns the output from `vitest`.
+- `get_allowed_files()`: Scans the `src` and `tests` directories and returns a list of readable files.
+- `read_file(filepath)`: Reads a specific file from the allowed list.
+- `create_animation_file(className, code)`: Saves a new animation file to a temporary session directory.
+- `create_test_file(className, code)`: Saves a new test file to a temporary session directory.
+- `update_animation_file(className, code)`: Updates an existing animation file in the session directory.
+- `update_test_file(className, code)`: Updates an existing test file in the session directory.
+- `run_tests(className)`: Executes the tests for the specified animation within the sandboxed session environment and returns the output from `vitest`.
 
 ### 2.3. Sandboxed Test Execution
 
@@ -47,11 +47,11 @@ The most complex part of the implementation was the `run_tests` function. To ens
 
 The implementation process, particularly the testing phase, presented several challenges.
 
-*   **CI/CD Failures:** The main challenge was a persistent series of failures from the `npm run ci` command. This was caused by a combination of linting errors, TypeScript compilation errors, and formatting issues.
-*   **Scoping Bug:** The most difficult bug to diagnose was a variable shadowing issue. Inside the `run_tests` function, the `resolve` function from the `new Promise((resolve) => ...)` constructor was shadowing the `resolve` function imported from the `path` module. This caused a TypeScript error (`Expected 1 arguments, but got 5`) that was initially very confusing.
-    *   **Solution:** The bug was fixed by renaming the promise's resolve function to `promiseResolve`, which resolved the name conflict.
-*   **Test Runner Configuration:** I initially over-engineered a solution involving a temporary `vitest.config.ts` file for each session. After several failed attempts, I realized a much simpler approach was possible by leveraging `vitest`'s command-line options (`--root` and specifying the test file path directly). This highlights the importance of fully understanding the capabilities of the tools being used.
-*   **Iterative Debugging:** The process of getting the CI checks to pass was highly iterative. It involved making a change, running the check, analyzing the error, and repeating. This trial-and-error process, while slow, was effective in systematically eliminating all the issues.
+- **CI/CD Failures:** The main challenge was a persistent series of failures from the `npm run ci` command. This was caused by a combination of linting errors, TypeScript compilation errors, and formatting issues.
+- **Scoping Bug:** The most difficult bug to diagnose was a variable shadowing issue. Inside the `run_tests` function, the `resolve` function from the `new Promise((resolve) => ...)` constructor was shadowing the `resolve` function imported from the `path` module. This caused a TypeScript error (`Expected 1 arguments, but got 5`) that was initially very confusing.
+  - **Solution:** The bug was fixed by renaming the promise's resolve function to `promiseResolve`, which resolved the name conflict.
+- **Test Runner Configuration:** I initially over-engineered a solution involving a temporary `vitest.config.ts` file for each session. After several failed attempts, I realized a much simpler approach was possible by leveraging `vitest`'s command-line options (`--root` and specifying the test file path directly). This highlights the importance of fully understanding the capabilities of the tools being used.
+- **Iterative Debugging:** The process of getting the CI checks to pass was highly iterative. It involved making a change, running the check, analyzing the error, and repeating. This trial-and-error process, while slow, was effective in systematically eliminating all the issues.
 
 ## 4. Final Outcome
 

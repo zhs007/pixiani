@@ -71,13 +71,13 @@ The editor's backend implements a Test-Driven Development (TDD) loop for the wor
 
 The worker agent has access to a specific set of tools (function calls) that you, as the "meta-agent", are responsible for maintaining. These tools are:
 
--   `get_allowed_files()`: Lists existing animation and test files.
--   `read_file(filepath)`: Reads a file.
--   `create_animation_file(className, code)`: Creates the animation source file.
--   `create_test_file(className, code)`: Creates the test file.
--   `run_tests(className)`: Executes `vitest` on the generated test.
--   `update_animation_file(className, code)`: Updates the animation source.
--   `update_test_file(className, code)`: Updates the test file.
+- `get_allowed_files()`: Lists existing animation and test files.
+- `read_file(filepath)`: Reads a file.
+- `create_animation_file(className, code)`: Creates the animation source file.
+- `create_test_file(className, code)`: Creates the test file.
+- `run_tests(className)`: Executes `vitest` on the generated test.
+- `update_animation_file(className, code)`: Updates the animation source.
+- `update_test_file(className, code)`: Updates the test file.
 
 ### Modifying the Workflow
 
