@@ -667,12 +667,12 @@ async function main() {
         let stream = await genAI.models.generateContentStream({
           model: GEMINI_MODEL,
           contents: chatHistory,
-          generationConfig: {
+          config: {
             ...generationConfig,
             systemInstruction,
+            safetySettings,
+            tools,
           },
-          safetySettings,
-          tools,
         });
 
         const MAX_STEPS = 10;
@@ -842,12 +842,12 @@ async function main() {
           stream = await genAI.models.generateContentStream({
             model: GEMINI_MODEL,
             contents: chatHistory,
-            generationConfig: {
+            config: {
               ...generationConfig,
               systemInstruction,
+              safetySettings,
+              tools,
             },
-            safetySettings,
-            tools,
           });
 
           const contEnd = Date.now();
