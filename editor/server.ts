@@ -5,7 +5,7 @@ import fastifyStatic from '@fastify/static';
 import { ProxyAgent, setGlobalDispatcher } from 'undici';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, HarmCategory, HarmBlockThreshold, type SafetySetting } from '@google/genai';
 import { promises as fs, createWriteStream } from 'fs';
 import crypto from 'crypto';
 import multipart from '@fastify/multipart';
@@ -49,7 +49,7 @@ if (!API_KEY) {
   process.exit(1);
 }
 
-const genAI = new GoogleGenAI(API_KEY);
+const genAI = new GoogleGenAI({ apiKey: API_KEY });
 
 const systemInstruction = `You are an expert TypeScript developer specializing in Pixi.js animations. Your primary task is to implement new animation classes based on user descriptions. You must follow a strict Test-Driven Development (TDD) process.
 
@@ -102,7 +102,6 @@ const systemInstruction = `You are an expert TypeScript developer specializing i
   *   Do NOT rely on global or implicit pixi behavior. Tests must be self-contained and deterministic.
 `;
 
-
 const generationConfig = {
   temperature: 0.9,
   topK: 1,
@@ -110,22 +109,22 @@ const generationConfig = {
   maxOutputTokens: 8192,
 };
 
-const safetySettings = [
+const safetySettings: SafetySetting[] = [
   {
-    category: 'HARM_CATEGORY_HARASSMENT',
-    threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+    category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
   },
   {
-    category: 'HARM_CATEGORY_HATE_SPEECH',
-    threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+    category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
   },
   {
-    category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-    threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+    category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
   },
   {
-    category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-    threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+    category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
   },
 ];
 
@@ -629,10 +628,10 @@ async function main() {
     // --- Main async logic ---
     const run = async () => {
       let sessionId: string;
-      let idleTimeout: NodeJS.Timeout;
+      let idleTimeout: NodeJS.Timeout | undefined;
 
       const resetIdleTimeout = () => {
-        clearTimeout(idleTimeout);
+        if (idleTimeout) clearTimeout(idleTimeout);
         idleTimeout = setTimeout(() => {
           const error = new Error(
             `Timeout: No data received for ${CONTINUE_TIMEOUT_MS}ms. Closing connection.`,
@@ -664,16 +663,36 @@ async function main() {
         const chatHistory = sessions.get(sessionId)!;
         chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
 
-        let stream = await genAI.models.generateContentStream({
-          model: GEMINI_MODEL,
-          contents: chatHistory,
-          config: {
-            ...generationConfig,
-            systemInstruction,
-            safetySettings,
-            tools,
-          },
-        });
+        const openStreamWithRetry = async () => {
+          const attempts = Number.isFinite(CONTINUE_RETRIES) ? CONTINUE_RETRIES + 1 : 1;
+          let lastErr: any;
+          for (let attempt = 0; attempt < attempts; attempt++) {
+            try {
+              return await genAI.models.generateContentStream({
+                model: GEMINI_MODEL,
+                contents: chatHistory,
+                config: {
+                  ...generationConfig,
+                  systemInstruction,
+                  safetySettings,
+                  tools,
+                },
+              });
+            } catch (e: any) {
+              lastErr = e;
+              const waitMs = Math.min(1000 * Math.pow(2, attempt), 5000);
+              server.log.warn(
+                `[${sessionId}] generateContentStream failed (attempt ${attempt + 1}/${attempts}): ${e?.message || e}`,
+              );
+              if (attempt < attempts - 1) {
+                await new Promise((r) => setTimeout(r, waitMs));
+              }
+            }
+          }
+          throw lastErr;
+        };
+
+        let stream = await openStreamWithRetry();
 
         const MAX_STEPS = 10;
         for (let i = 0; i < MAX_STEPS; i++) {
@@ -693,8 +712,8 @@ async function main() {
             aggregatedResponse = chunk;
 
             // We also need to check for function calls in the chunks
-            if (chunk.functionCalls?.()) {
-              functionCalls.push(...chunk.functionCalls());
+            if (Array.isArray((chunk as any).functionCalls)) {
+              functionCalls.push(...(chunk as any).functionCalls);
             }
           }
           const finalResponse = aggregatedResponse;
@@ -839,16 +858,7 @@ async function main() {
             timeoutMs: CONTINUE_TIMEOUT_MS,
           });
 
-          stream = await genAI.models.generateContentStream({
-            model: GEMINI_MODEL,
-            contents: chatHistory,
-            config: {
-              ...generationConfig,
-              systemInstruction,
-              safetySettings,
-              tools,
-            },
-          });
+          stream = await openStreamWithRetry();
 
           const contEnd = Date.now();
           await logWorkflow(sessionId, 'model_continue_end', {
@@ -870,7 +880,7 @@ async function main() {
         server.log.error(error, 'Error processing chat stream');
         writeEvent({ type: 'error', message: `An unexpected error occurred: ${error.message}` });
       } finally {
-        clearTimeout(idleTimeout);
+        if (idleTimeout) clearTimeout(idleTimeout);
         reply.raw.end(); // Ensure the SSE connection is closed
       }
     };
@@ -888,7 +898,6 @@ async function main() {
       console.error(`[${sessionId}] Failed to write workflow log: ${e?.message || e}`);
     }
   }
-
 
   server.post('/api/clear_session', async (request, _reply) => {
     const { sessionId } = request.body as any;
