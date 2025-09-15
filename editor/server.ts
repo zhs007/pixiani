@@ -662,20 +662,19 @@ async function main() {
         resetIdleTimeout(); // Start the timer as soon as the request is processed
 
         const chatHistory = sessions.get(sessionId)!;
-        const modelInstance = genAI.getGenerativeModel({
-          model: GEMINI_MODEL,
-          systemInstruction,
-          tools,
-        });
+        chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
 
-        const chat = modelInstance.startChat({
-          history: chatHistory,
+        // The new SDK prefers the system instruction to be part of the chat history.
+        const fullHistory = [{ role: 'system', parts: [{ text: systemInstruction }] }, ...chatHistory];
+
+        const result = await genAI.models.generateContentStream({
+          model: GEMINI_MODEL,
+          contents: fullHistory,
           generationConfig,
           safetySettings,
+          tools,
         });
-
-        chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
-        let stream = await chat.sendMessageStream(prompt);
+        let stream = result.stream;
 
         const MAX_STEPS = 10;
         for (let i = 0; i < MAX_STEPS; i++) {
@@ -834,7 +833,14 @@ async function main() {
             timeoutMs: CONTINUE_TIMEOUT_MS,
           });
 
-          stream = await chat.sendMessageStream(''); // Send empty message to continue the conversation
+          const nextResult = await genAI.models.generateContentStream({
+            model: GEMINI_MODEL,
+            contents: chatHistory,
+            generationConfig,
+            safetySettings,
+            tools,
+          });
+          stream = nextResult.stream;
 
           const contEnd = Date.now();
           await logWorkflow(sessionId, 'model_continue_end', {
