@@ -679,11 +679,19 @@ async function main() {
         for (let i = 0; i < MAX_STEPS; i++) {
           let aggregatedResponse: any = null;
           let functionCalls: any[] = [];
+          let fullText = '';
 
           for await (const chunk of stream) {
             resetIdleTimeout(); // Reset timer on each received chunk
-            // The new SDK aggregates the response automatically. We just need to get the last one.
+
+            // Aggregate text from all chunks
+            if (chunk.text) {
+              fullText += chunk.text;
+            }
+
+            // The last chunk contains other useful details like function calls
             aggregatedResponse = chunk;
+
             // We also need to check for function calls in the chunks
             if (chunk.functionCalls?.()) {
               functionCalls.push(...chunk.functionCalls());
@@ -695,13 +703,12 @@ async function main() {
             throw new Error('Received no response from model stream.');
           }
 
-          // In the new SDK, function calls are often streamed and need to be collected.
-          // After the stream ends, we check if we have any.
+          // After the stream ends, check if we have any function calls.
           if (functionCalls.length === 0) {
-            const finalText = finalResponse.text;
-            await logWorkflow(sessionId, 'final_response', { text: finalText });
-            writeEvent({ type: 'final_response', text: finalText });
-            chatHistory.push({ role: 'model', parts: [{ text: finalText }] });
+            // If no function calls, the agent is done. Log and send the full accumulated text.
+            await logWorkflow(sessionId, 'final_response', { text: fullText });
+            writeEvent({ type: 'final_response', text: fullText });
+            chatHistory.push({ role: 'model', parts: [{ text: fullText }] });
             return; // End of loop
           }
 
