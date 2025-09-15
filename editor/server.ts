@@ -5,7 +5,7 @@ import fastifyStatic from '@fastify/static';
 import { ProxyAgent, setGlobalDispatcher } from 'undici';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
+import { GoogleGenAI, HarmCategory, HarmBlockThreshold, type SafetySetting } from '@google/genai';
 import { promises as fs, createWriteStream } from 'fs';
 import crypto from 'crypto';
 import multipart from '@fastify/multipart';
@@ -48,10 +48,10 @@ if (!API_KEY) {
   console.error('FATAL: GEMINI_API_KEY environment variable is not set.');
   process.exit(1);
 }
-const genAI = new GoogleGenerativeAI(API_KEY);
-const model = genAI.getGenerativeModel({
-  model: GEMINI_MODEL,
-  systemInstruction: `You are an expert TypeScript developer specializing in Pixi.js animations. Your primary task is to implement new animation classes based on user descriptions. You must follow a strict Test-Driven Development (TDD) process.
+
+const genAI = new GoogleGenAI({ apiKey: API_KEY });
+
+const systemInstruction = `You are an expert TypeScript developer specializing in Pixi.js animations. Your primary task is to implement new animation classes based on user descriptions. You must follow a strict Test-Driven Development (TDD) process.
 
 **Your Workflow:**
 
@@ -100,8 +100,7 @@ const model = genAI.getGenerativeModel({
   *   Use \`vi.mock('pixi.js', async () => { const actual = await vi.importActual('pixi.js'); return { ...actual, Sprite: vi.fn().mockImplementation(factory) }; })\`.
   *   Only mock what you need (commonly \`Sprite\` and simple methods like \`anchor.set\`, \`scale.set\`). Keep the mock minimal, deterministic, and per-test reset with \`vi.clearAllMocks()\`.
   *   Do NOT rely on global or implicit pixi behavior. Tests must be self-contained and deterministic.
-`,
-});
+`;
 
 const generationConfig = {
   temperature: 0.9,
@@ -110,7 +109,7 @@ const generationConfig = {
   maxOutputTokens: 8192,
 };
 
-const safetySettings = [
+const safetySettings: SafetySetting[] = [
   {
     category: HarmCategory.HARM_CATEGORY_HARASSMENT,
     threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
@@ -628,52 +627,117 @@ async function main() {
 
     // --- Main async logic ---
     const run = async () => {
-      let createdClassName: string | null = null;
+      let sessionId: string;
+      let idleTimeout: NodeJS.Timeout | undefined;
+
+      const resetIdleTimeout = () => {
+        if (idleTimeout) clearTimeout(idleTimeout);
+        idleTimeout = setTimeout(() => {
+          const error = new Error(
+            `Timeout: No data received for ${CONTINUE_TIMEOUT_MS}ms. Closing connection.`,
+          );
+          server.log.warn(`[${sessionId}] ${error.message}`);
+          writeEvent({ type: 'error', message: error.message });
+          reply.raw.end();
+        }, CONTINUE_TIMEOUT_MS);
+      };
+
       try {
         const { prompt, sessionId: querySessionId } = request.query as {
           prompt: string;
           sessionId?: string;
         };
-        let sessionId = querySessionId;
 
-        if (!sessionId) {
+        if (!querySessionId) {
           sessionId = crypto.randomUUID();
           sessions.set(sessionId, []);
           writeEvent({ type: 'session_id', sessionId });
-        } else if (!sessions.has(sessionId)) {
-          sessions.set(sessionId, []);
+        } else {
+          sessionId = querySessionId;
+          if (!sessions.has(sessionId)) {
+            sessions.set(sessionId, []);
+          }
         }
+        resetIdleTimeout(); // Start the timer as soon as the request is processed
+
         const chatHistory = sessions.get(sessionId)!;
-
-        const chat = model.startChat({
-          history: chatHistory,
-          generationConfig,
-          safetySettings,
-          tools,
-        });
-
         chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
-        let result = await chat.sendMessage(prompt);
+
+        const openStreamWithRetry = async () => {
+          const attempts = Number.isFinite(CONTINUE_RETRIES) ? CONTINUE_RETRIES + 1 : 1;
+          let lastErr: any;
+          for (let attempt = 0; attempt < attempts; attempt++) {
+            try {
+              return await genAI.models.generateContentStream({
+                model: GEMINI_MODEL,
+                contents: chatHistory,
+                config: {
+                  ...generationConfig,
+                  systemInstruction,
+                  safetySettings,
+                  tools,
+                },
+              });
+            } catch (e: any) {
+              lastErr = e;
+              const waitMs = Math.min(1000 * Math.pow(2, attempt), 5000);
+              server.log.warn(
+                `[${sessionId}] generateContentStream failed (attempt ${attempt + 1}/${attempts}): ${e?.message || e}`,
+              );
+              if (attempt < attempts - 1) {
+                await new Promise((r) => setTimeout(r, waitMs));
+              }
+            }
+          }
+          throw lastErr;
+        };
+
+        let stream = await openStreamWithRetry();
 
         const MAX_STEPS = 10;
         for (let i = 0; i < MAX_STEPS; i++) {
-          const functionCalls = result.response.functionCalls?.();
-          if (!functionCalls || functionCalls.length === 0) {
-            // No more function calls, agent is done or requires input
-            const finalText = result.response.text();
-            // Log full final response to workflow log for auditing
-            await logWorkflow(sessionId, 'final_response', { text: finalText });
-            writeEvent({ type: 'final_response', text: finalText });
-            chatHistory.push({ role: 'model', parts: [{ text: finalText }] });
+          let aggregatedResponse: any = null;
+          let functionCalls: any[] = [];
+          let fullText = '';
+
+          for await (const chunk of stream) {
+            resetIdleTimeout(); // Reset timer on each received chunk
+
+            // Aggregate text from all chunks
+            if (chunk.text) {
+              fullText += chunk.text;
+            }
+
+            // The last chunk contains other useful details like function calls
+            aggregatedResponse = chunk;
+
+            // We also need to check for function calls in the chunks
+            if (Array.isArray((chunk as any).functionCalls)) {
+              functionCalls.push(...(chunk as any).functionCalls);
+            }
+          }
+          const finalResponse = aggregatedResponse;
+
+          if (!finalResponse) {
+            throw new Error('Received no response from model stream.');
+          }
+
+          // After the stream ends, check if we have any function calls.
+          if (functionCalls.length === 0) {
+            // If no function calls, the agent is done. Log and send the full accumulated text.
+            await logWorkflow(sessionId, 'final_response', { text: fullText });
+            writeEvent({ type: 'final_response', text: fullText });
+            chatHistory.push({ role: 'model', parts: [{ text: fullText }] });
             return; // End of loop
           }
 
-          const call = functionCalls[0] as any;
+          const call = functionCalls[0]; // Assuming one tool call at a time for now
           server.log.info(`[${sessionId}] Executing tool call: ${call.name}`, call.args);
           writeEvent({ type: 'tool_call', name: call.name, args: call.args });
 
-          // --- Tool Execution Logic ---
+          // --- Tool Execution Logic (remains the same) ---
           let toolResponseContent;
+          // ... (Existing switch case for tool execution)
           switch (call.name) {
             case 'get_allowed_files':
               toolResponseContent = await get_allowed_files(sessionId);
@@ -689,9 +753,6 @@ async function main() {
                 call.args.code,
               );
               toolResponseContent = res.message;
-              if (res.success && !createdClassName) {
-                createdClassName = call.args.className;
-              }
               break;
             }
             case 'create_test_file': {
@@ -724,7 +785,6 @@ async function main() {
                   ? `Published ${call.args.className} successfully.`
                   : `Failed to publish ${call.args.className}.`;
                 if (!res.success) {
-                  // Also surface an error event for the UI to display clearly
                   writeEvent({ type: 'error', message: `发布失败：${call.args.className}` });
                 }
               }
@@ -736,7 +796,7 @@ async function main() {
 
           writeEvent({ type: 'tool_response', name: call.name, response: toolResponseContent });
 
-          // --- Publish on Success ---
+          // --- Publish on Success (remains the same) ---
           if (
             call.name === 'run_tests' &&
             (toolResponseContent.startsWith('Tests passed successfully') ||
@@ -747,7 +807,6 @@ async function main() {
             server.log.info(
               `[${sessionId}] Tests passed for ${classNameToPublish}, attempting to publish...`,
             );
-            // Surface a synthetic tool_call to keep UI consistent when auto-publishing
             writeEvent({
               type: 'tool_call',
               name: 'publish_files',
@@ -775,11 +834,12 @@ async function main() {
             }
           }
 
-          // Send the tool response back to the model
+          // The history push for the model's function call is now implicit in the SDK
           chatHistory.push({
             role: 'model',
             parts: [{ functionCall: call }],
           });
+          // Send the tool response back to the model for the next turn
           chatHistory.push({
             role: 'function',
             parts: [
@@ -787,70 +847,28 @@ async function main() {
             ],
           });
 
-          {
-            const contStart = Date.now();
-            await logWorkflow(sessionId, 'model_continue_start', {
-              retries: CONTINUE_RETRIES,
-              timeoutMs: CONTINUE_TIMEOUT_MS,
-            });
-            writeEvent({
-              type: 'heartbeat',
-              phase: 'model_continue_start',
-              retries: CONTINUE_RETRIES,
-              timeoutMs: CONTINUE_TIMEOUT_MS,
-            });
-            try {
-              result = await sendWithTimeoutAndRetry(
-                () => chat.sendMessage(''),
-                CONTINUE_TIMEOUT_MS,
-                CONTINUE_RETRIES,
-                async (attempt) => {
-                  await logWorkflow(sessionId, 'model_continue_attempt_start', { attempt });
-                  writeEvent({ type: 'heartbeat', phase: 'model_continue_attempt_start', attempt });
-                },
-                async (attempt: number, err: any) => {
-                  await logWorkflow(sessionId, 'model_continue_attempt_error', {
-                    attempt,
-                    error: err?.message || String(err),
-                  });
-                  writeEvent({
-                    type: 'heartbeat',
-                    phase: 'model_continue_attempt_error',
-                    attempt,
-                    error: (err?.message || String(err)).slice(0, 300),
-                  });
-                },
-              );
-              const contEnd = Date.now();
-              let preview = '';
-              try {
-                preview = result?.response?.text?.() ?? '';
-              } catch {}
-              await logWorkflow(sessionId, 'model_continue_end', {
-                durationMs: contEnd - contStart,
-                responsePreview: preview,
-              });
-              writeEvent({
-                type: 'heartbeat',
-                phase: 'model_continue_end',
-                durationMs: contEnd - contStart,
-                responsePreview: preview,
-              });
-            } catch (e: any) {
-              const contEnd = Date.now();
-              await logWorkflow(sessionId, 'model_continue_error', {
-                durationMs: contEnd - contStart,
-                error: e?.message || String(e),
-              });
-              writeEvent({
-                type: 'heartbeat',
-                phase: 'model_continue_error',
-                durationMs: contEnd - contStart,
-                error: (e?.message || String(e)).slice(0, 300),
-              });
-              throw e;
-            }
-          }
+          // Get the stream for the next turn.
+          const contStart = Date.now();
+          await logWorkflow(sessionId, 'model_continue_start', {
+            timeoutMs: CONTINUE_TIMEOUT_MS,
+          });
+          writeEvent({
+            type: 'heartbeat',
+            phase: 'model_continue_start',
+            timeoutMs: CONTINUE_TIMEOUT_MS,
+          });
+
+          stream = await openStreamWithRetry();
+
+          const contEnd = Date.now();
+          await logWorkflow(sessionId, 'model_continue_end', {
+            durationMs: contEnd - contStart,
+          });
+          writeEvent({
+            type: 'heartbeat',
+            phase: 'model_continue_end',
+            durationMs: contEnd - contStart,
+          });
 
           if (i === MAX_STEPS - 1) {
             writeEvent({ type: 'error', message: 'Workflow exceeded maximum steps (10).' });
@@ -862,10 +880,10 @@ async function main() {
         server.log.error(error, 'Error processing chat stream');
         writeEvent({ type: 'error', message: `An unexpected error occurred: ${error.message}` });
       } finally {
-        reply.raw.end(); // Close the SSE connection
+        if (idleTimeout) clearTimeout(idleTimeout);
+        reply.raw.end(); // Ensure the SSE connection is closed
       }
     };
-
     run();
   });
   // Append workflow events to a session-scoped JSONL log
@@ -879,44 +897,6 @@ async function main() {
     } catch (e: any) {
       console.error(`[${sessionId}] Failed to write workflow log: ${e?.message || e}`);
     }
-  }
-
-  // Promise timeout with optional retries and hooks
-  async function sendWithTimeoutAndRetry<T>(
-    fn: () => Promise<T>,
-    timeoutMs: number,
-    retries: number,
-    onAttemptStart?: (attempt: number) => void | Promise<void>,
-    onAttemptError?: (attempt: number, err: unknown) => void | Promise<void>,
-  ): Promise<T> {
-    let attempt = 0;
-    while (true) {
-      attempt++;
-      try {
-        if (onAttemptStart) await onAttemptStart(attempt);
-        const res = await promiseWithTimeout(fn(), timeoutMs);
-        return res;
-      } catch (e) {
-        if (onAttemptError) await onAttemptError(attempt, e);
-        if (attempt > retries) throw e;
-      }
-    }
-  }
-
-  function promiseWithTimeout<T>(p: Promise<T>, timeoutMs: number): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs);
-      p.then(
-        (v) => {
-          clearTimeout(t);
-          resolve(v);
-        },
-        (e) => {
-          clearTimeout(t);
-          reject(e);
-        },
-      );
-    });
   }
 
   server.post('/api/clear_session', async (request, _reply) => {

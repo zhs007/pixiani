@@ -52,7 +52,7 @@
     "@fastify/multipart": "^9.0.3",
     "@fastify/static": "*",
     "@fastify/vite": "*",
-    "@google/generative-ai": "*",
+    "@google/genai": "*",
     "@types/busboy": "^1.5.4",
     "dotenv": "*",
     "fastify": "*",
