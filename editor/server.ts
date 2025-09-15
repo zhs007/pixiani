@@ -664,7 +664,7 @@ async function main() {
         const chatHistory = sessions.get(sessionId)!;
         chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
 
-        const result = await genAI.models.generateContentStream({
+        let stream = await genAI.models.generateContentStream({
           model: GEMINI_MODEL,
           contents: chatHistory,
           generationConfig: {
@@ -674,7 +674,6 @@ async function main() {
           safetySettings,
           tools,
         });
-        let stream = result.stream;
 
         const MAX_STEPS = 10;
         for (let i = 0; i < MAX_STEPS; i++) {
@@ -833,7 +832,7 @@ async function main() {
             timeoutMs: CONTINUE_TIMEOUT_MS,
           });
 
-          const nextResult = await genAI.models.generateContentStream({
+          stream = await genAI.models.generateContentStream({
             model: GEMINI_MODEL,
             contents: chatHistory,
             generationConfig: {
@@ -843,7 +842,6 @@ async function main() {
             safetySettings,
             tools,
           });
-          stream = nextResult.stream;
 
           const contEnd = Date.now();
           await logWorkflow(sessionId, 'model_continue_end', {
