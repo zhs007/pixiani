@@ -1,7 +1,6 @@
 import { defineConfig, searchForWorkspaceRoot } from 'vite';
 import { resolve } from 'path';
 import react from '@vitejs/plugin-react';
-import fastifyVite from '@fastify/vite/plugin';
 
 export default defineConfig({
   // Editor client root (contains index.html)
@@ -15,25 +14,18 @@ export default defineConfig({
       allow: [
         searchForWorkspaceRoot(process.cwd()),
         // Also allow the out-of-tree sessions folder
-        resolve(__dirname, '../.sessions'),
+        resolve(__dirname, '../../.sessions'),
       ],
     },
   },
 
   // Expose project assets folder
-  publicDir: resolve(__dirname, '../assets'),
+  publicDir: resolve(__dirname, '../../assets'),
 
-  resolve: {
-    alias: {
-      // Allow importing the library directly from source in dev
-      'pixi-animation-library': resolve(__dirname, '../src/index.ts'),
-    },
-  },
-
-  plugins: [fastifyVite() as any, react()],
+  plugins: [react()],
 
   build: {
-    outDir: resolve(__dirname, '../dist/editor'),
+    outDir: resolve(__dirname, 'dist'),
     emptyOutDir: true,
   },
 });

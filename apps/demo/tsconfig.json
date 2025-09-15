@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": true,
+    "isolatedModules": true
+  },
+  "include": ["."],
+  "exclude": ["node_modules"]
+}
