@@ -664,13 +664,13 @@ async function main() {
         const chatHistory = sessions.get(sessionId)!;
         chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
 
-        // The new SDK prefers the system instruction to be part of the chat history.
-        const fullHistory = [{ role: 'system', parts: [{ text: systemInstruction }] }, ...chatHistory];
-
         const result = await genAI.models.generateContentStream({
           model: GEMINI_MODEL,
-          contents: fullHistory,
-          generationConfig,
+          contents: chatHistory,
+          generationConfig: {
+            ...generationConfig,
+            systemInstruction,
+          },
           safetySettings,
           tools,
         });
@@ -836,7 +836,10 @@ async function main() {
           const nextResult = await genAI.models.generateContentStream({
             model: GEMINI_MODEL,
             contents: chatHistory,
-            generationConfig,
+            generationConfig: {
+              ...generationConfig,
+              systemInstruction,
+            },
             safetySettings,
             tools,
           });
