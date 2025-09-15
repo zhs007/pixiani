@@ -698,7 +698,7 @@ async function main() {
           // In the new SDK, function calls are often streamed and need to be collected.
           // After the stream ends, we check if we have any.
           if (functionCalls.length === 0) {
-            const finalText = finalResponse.text();
+            const finalText = finalResponse.text;
             await logWorkflow(sessionId, 'final_response', { text: finalText });
             writeEvent({ type: 'final_response', text: finalText });
             chatHistory.push({ role: 'model', parts: [{ text: finalText }] });
