@@ -1,17 +1,14 @@
 {
   "compilerOptions": {
-    "target": "ESNext",
     "module": "ESNext",
-    "moduleResolution": "node",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "outDir": "./dist",
-    "declaration": true,
-    "sourceMap": true,
-    "lib": ["ESNext", "DOM"]
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "tests", "demo"]
+  "files": [],
+  "include": [],
+  "references": [
+    { "path": "packages/pixiani-core" },
+    { "path": "apps/demo" },
+    { "path": "apps/editor" }
+  ]
 }

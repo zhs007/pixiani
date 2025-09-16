@@ -8,7 +8,7 @@ import {
   FlagWaveAnimation,
   VortexAnimation,
   AnimateClass,
-} from 'pixi-animation-library';
+} from '@pixi-animation-library/pixiani-core';
 
 // --- Configuration ---
 const CANVAS_WIDTH = 360;

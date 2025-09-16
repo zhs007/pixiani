@@ -1,6 +1,7 @@
 # 项目概要: PixiJS 动画库
 
 这是一个使用 Pixi.js 和 TypeScript 开发的、面向移动端竖屏的 Web 游戏动画库。
+**项目现在已经重构为一个由 pnpm 和 Turborepo 管理的 monorepo。**
 
 ## 重要信息与规则
 
@@ -9,13 +10,21 @@
 - **渲染引擎:** Pixi.js (最新版)
 - **渲染模式:** WebGL
 - **开发语言:** TypeScript
+- **包管理器:** pnpm
+- **Monorepo 工具:** Turborepo
 - **构建工具:** Vite
 - **测试框架:** Vitest
 
+### Monorepo 结构
+
+- `packages/pixiani-core`: 核心动画库。
+- `apps/demo`: 用于测试和演示动画的 Vite 应用。
+- `apps/editor`: Gemini 动画编辑器。
+
 ### 核心设计原则
 
-1.  **模块化:** 功能被划分到不同的 "package" (目录) 中。`core` 包含核心逻辑, `animations` 包含具体的动画实现。
-2.  **类型安全:** 所有模块都必须有完整的 TypeScript 类型定义。核心类型定义在 `src/core/types.ts`。
+1.  **模块化:** 功能被划分到不同的 "package" 中。`packages/pixiani-core/src/core` 包含核心逻辑, `packages/pixiani-core/src/animations` 包含具体的动画实现。
+2.  **类型安全:** 所有模块都必须有完整的 TypeScript 类型定义。核心类型定义在 `packages/pixiani-core/src/core/types.ts`。
 3.  **高可测试性:** 核心逻辑模块必须有单元测试，目标覆盖率 > 90%。
 4.  **详细注释:** 所有公开的类、方法和复杂逻辑都需要有 JSDoc 注释。
 5.  **关注相对变换:** 动画应该只修改 Sprite 的相对属性（如相对于其初始状态的缩放、位置偏移），而不是其在世界坐标系中的绝对位置。
@@ -39,18 +48,22 @@
 
 ### 开发流程
 
-1.  **定义类型:** 在 `src/core/types.ts` 中添加新的接口或类型。
-2.  **实现核心逻辑:** 在 `src/core` 中实现或修改核心类。
-3.  **编写动画:** 在 `src/animations` 目录下创建新的动画文件，继承 `BaseAnimate`。
-4.  **编写测试:** 在 `tests` 目录下为新功能编写单元测试。
-5.  **演示验证:** 在 `demo` 页面中添加新的测试用例，直观地验证动画效果。
-6.  **构建与提交:** 运行 `npm run build` 和 `npm run test`，确保一切正常后提交。
+1.  **定义类型:** 在 `packages/pixiani-core/src/core/types.ts` 中添加新的接口或类型。
+2.  **实现核心逻辑:** 在 `packages/pixiani-core/src/core` 中实现或修改核心类。
+3.  **编写动画:** 在 `packages/pixiani-core/src/animations` 目录下创建新的动画文件，继承 `BaseAnimate`。
+4.  **编写测试:** 在 `packages/pixiani-core/tests` 目录下为新功能编写单元测试。
+5.  **演示验证:** 在 `demo` 应用中添加新的测试用例，直观地验证动画效果。
+6.  **构建与提交:** 运行 `pnpm build` 和 `pnpm test`，确保一切正常后提交。
 
 ### 命令
 
-- `npm run dev`: 启动开发服务器，访问 `demo/index.html`。
-- `npm run build`: 构建生产版本的库。
-- `npm run test`: 运行单元测试。
+- `pnpm install`: 安装所有依赖。
+- `pnpm dev`: 启动所有应用的开发服务器。
+- `pnpm dev --filter=demo`: 启动 `demo` 应用的开发服务器。
+- `pnpm dev --filter=editor`: 启动 `editor` 应用的开发服务器。
+- `pnpm build`: 构建所有包和应用。
+- `pnpm test`: 运行所有测试。
+- `pnpm lint`: 对整个项目进行代码风格检查。
 
 ## 开发进度
 
@@ -63,6 +76,7 @@
 - [x] **任务 7: 最终审查与提交** - 完成
 - [x] **任务 8: Gemini 动画编辑器** - 新增一个基于 Web 的子项目，允许用户通过自然语言描述生成、预览和下载新的动画。
 - [x] **任务 9: Gemini TDD 流程** - 为 Gemini Agent 实现一个完整的测试驱动开发（TDD）工作流，使其能够编写代码、编写测试、运行测试并根据结果进行调试。
+- [x] **任务 10: Monorepo 重构** - 使用 pnpm 和 Turborepo 将项目重构为 monorepo 结构。
 
 ## Gemini 动画编辑器
 
@@ -71,7 +85,7 @@
 1.  在项目根目录创建一个 `.env` 文件。
 2.  在 `.env` 文件中添加您的 Gemini API 密钥: `GEMINI_API_KEY=your_api_key_here`
 3.  (可选) 您也可以指定要使用的模型: `GEMINI_MODEL=gemini-1.5-pro` (默认为 `gemini-1.5-flash`)
-4.  运行编辑器的开发服务器: `npm run dev:editor`
+4.  运行编辑器的开发服务器: `pnpm dev:editor`
 5.  在浏览器中打开 `http://localhost:3000`。
 
 ### TDD 工作流
@@ -91,7 +105,7 @@
 1.  **写入暂存区 (Staging)**: Agent创建或修改的所有文件（动画和测试）都会被写入到一个临时的`staging`子目录中 (`.sessions/<session-id>/staging/`)。这个目录不会被Vite服务监控。
 
 2.  **在暂存区测试**: `run_tests`工具只在`staging`目录中执行测试。
-    - **代码编写规则**: 为了确保测试代码的健壮性，Agent被指示遵循严格的导入规则：对于核心库代码（如`BaseObject`），必须使用`pixi-animation-library`路径别名；对于它自己正在测试的动画类，必须使用相对路径 (`../../src/animations/...`)。
+    - **代码编写规则**: 为了确保测试代码的健壮性，Agent被指示遵循严格的导入规则：对于核心库代码（如`BaseObject`），必须使用`@pixi-animation-library/pixiani-core`路径别名；对于它自己正在测试的动画类，必须使用相对路径 (`../../src/animations/...`)。
     - 如果测试因代码错误（无论是编译错误还是断言失败）而失败，Agent会收到错误报告，并在暂存区内继续尝试修复，这个过程不会影响到正在运行的前端服务。
     - 如果测试因无法解决的**环境问题**失败，Agent会识别出`SYSTEM_ERROR`并停止工作流。它返回给Agent的错误信息会包含完整的`stdout`和`stderr`日志，Agent被指示将这些详细信息完整报告给用户，以方便调试。
 
@@ -103,7 +117,7 @@
 
 ### 编辑服务器超时与连接管理
 
-为了处理与 Gemini API 的长时间流式通信，特别是当 Agent 处于较长的“思考”阶段时，编辑器后端（`editor/server.ts`）实现了一套基于数据流的**空闲超时（Idle Timeout）**机制。
+为了处理与 Gemini API 的长时间流式通信，特别是当 Agent 处于较长的“思考”阶段时，编辑器后端（`apps/editor/server.ts`）实现了一套基于数据流的**空闲超时（Idle Timeout）**机制。
 
 #### 设计原则
 

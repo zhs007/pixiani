@@ -141,3 +141,6 @@ vite.config.ts.timestamp-*
 # Editor sessions (generated at runtime)
 .sessions/
 chrome-debug-profile
+
+# Turborepo
+.turbo

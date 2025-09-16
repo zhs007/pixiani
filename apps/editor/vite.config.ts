@@ -8,32 +8,44 @@ export default defineConfig({
   root: resolve(__dirname, 'web'),
 
   server: {
-    middlewareMode: true,
     fs: {
       // Allow reading files from the workspace root so we can access
       // editor/sessions and project assets during dev
       allow: [
         searchForWorkspaceRoot(process.cwd()),
         // Also allow the out-of-tree sessions folder
-        resolve(__dirname, '../.sessions'),
+        resolve(__dirname, '../../.sessions'),
       ],
     },
   },
 
   // Expose project assets folder
-  publicDir: resolve(__dirname, '../assets'),
+  publicDir: resolve(__dirname, '../../assets'),
+
+  plugins: [
+    react(),
+    // Bridge Vite to Fastify via @fastify/vite
+    fastifyVite({
+      spa: true,
+      clientModule: '/main.tsx',
+    }),
+  ],
 
   resolve: {
     alias: {
-      // Allow importing the library directly from source in dev
-      'pixi-animation-library': resolve(__dirname, '../src/index.ts'),
+      '@pixi-animation-library/pixiani-core': resolve(
+        __dirname,
+        '../../packages/pixiani-core/src/index.ts',
+      ),
     },
   },
 
-  plugins: [fastifyVite() as any, react()],
+  optimizeDeps: {
+    exclude: ['@pixi-animation-library/pixiani-core'],
+  },
 
   build: {
-    outDir: resolve(__dirname, '../dist/editor'),
+    outDir: resolve(__dirname, 'dist'),
     emptyOutDir: true,
   },
 });

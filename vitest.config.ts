@@ -4,35 +4,33 @@ import { resolve } from 'path';
 export default defineConfig({
   resolve: {
     alias: {
-      'pixi-animation-library': resolve(__dirname, './src/index.ts'),
+      // Ensure tests in sessions resolve the workspace core pkg consistently
+      '@pixi-animation-library/pixiani-core': resolve(
+        __dirname,
+        './packages/pixiani-core/src/index.ts',
+      ),
     },
   },
   test: {
-    environment: 'jsdom',
-    // Inline pixi.js so it is transformed for the test environment
+    environment: 'node',
+    // Discover both repo tests and session-staged tests
+    include: [
+      '**/tests/**/*.test.ts',
+      '**/tests/**/*.spec.ts',
+      '.sessions/**/tests/**/*.test.ts',
+      '.sessions/**/tests/**/*.spec.ts',
+    ],
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/coverage/**',
+      '**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*',
+    ],
+    // Inline pixi for transformation when needed by session tests
     deps: {
       inline: ['pixi.js'],
     },
-    // Global setup for tests; will conditionally mock pixi.js only for session runs
-    setupFiles: ['tests/setup/staging-mock-pixi.ts'],
-    include: ['tests/**/*.test.ts', '.sessions/**/tests/**/*.test.ts'],
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'json', 'html'],
-      thresholds: {
-        lines: 90,
-        functions: 90,
-        branches: 90,
-        statements: 90,
-      },
-      include: ['src/**/*.ts'],
-      exclude: [
-        'src/core/types.ts',
-        '**/tests/**',
-        '**/*.config.ts',
-        '**/node_modules/**',
-        '**/dist/**',
-      ],
-    },
+    // Use setup from core package if present; optional in sessions
+    setupFiles: [resolve(__dirname, './packages/pixiani-core/tests/setup/staging-mock-pixi.ts')],
   },
 });

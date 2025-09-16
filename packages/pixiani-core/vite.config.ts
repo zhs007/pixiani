@@ -10,9 +10,9 @@ export default defineConfig({
       // The entry point for the library.
       entry: resolve(__dirname, 'src/index.ts'),
       // The name for the UMD global variable.
-      name: 'PixiAnim',
+      name: 'PixianiCore',
       // The base name for the output files.
-      fileName: 'pixi-animation-library',
+      fileName: 'index',
     },
     // Configure Rollup options for more control over the build.
     rollupOptions: {
@@ -27,7 +27,7 @@ export default defineConfig({
       },
     },
     // Specify the output directory for the built library.
-    outDir: 'dist/lib',
+    outDir: 'dist',
     // Clear the output directory before building.
     emptyOutDir: true,
   },
@@ -35,7 +35,7 @@ export default defineConfig({
   plugins: [
     dts({
       // The output directory for the declaration files.
-      outDir: 'dist/lib/types',
+      outDir: 'dist/types',
       // The root directory of the source files to include in the declaration.
       entryRoot: 'src',
     }),

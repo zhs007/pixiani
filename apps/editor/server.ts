@@ -20,9 +20,13 @@ const pump = util.promisify(pipeline);
 // --- Setup ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const SESSIONS_DIR = resolve(__dirname, '../.sessions');
-const ASSETS_SPRITE_DIR = resolve(__dirname, '../assets/sprite');
-const ROOT_DIR = resolve(__dirname, '..');
+// Place sessions at repo root to match Vite fs.allow and frontend dynamic imports
+const SESSIONS_DIR = resolve(__dirname, '../../.sessions');
+// Serve assets from the repo-level assets/sprite directory
+const ASSETS_SPRITE_DIR = resolve(__dirname, '../../assets/sprite');
+// apps/ directory
+// Repository root (used for Vitest root so it can access .sessions/* tests)
+const ROOT_DIR = resolve(__dirname, '../..');
 
 const PROXY_URL =
   process.env.HTTPS_PROXY ||
@@ -70,7 +74,7 @@ const systemInstruction = `You are an expert TypeScript developer specializing i
 
 1.  **Imports:**
     *   Use: \`import * as PIXI from 'pixi.js'\`.
-    *   Use: \`import { BaseAnimate } from 'pixi-animation-library'\`.
+    *   Use: \`import { BaseAnimate } from '@pixi-animation-library/pixiani-core'\`.
     *   Do NOT import from relative core paths like '../core/BaseAnimate'.
 2.  **BaseAnimate Contract (Mandatory):**
     *   Export a single named class that \`extends BaseAnimate\`.
@@ -82,14 +86,23 @@ const systemInstruction = `You are an expert TypeScript developer specializing i
     *   Call \`this.setState('ENDED')\` from \`update()\` to finish the animation.
 3.  **File Output:** The file must contain only the single exported class.
 
+**Runtime & Timing Rules (Very Important):**
+
+1.  Time units: The \`deltaTime\` passed to \`update(deltaTime)\` is in SECONDS. Do not treat it as milliseconds, and do not multiply by \`1000/60\`.
+2.  Speed handling: The AnimationManager already applies both global speed and per-animation \`anim.speed\` BEFORE calling \`update()\`. Inside the animation, do NOT multiply time by \`this.speed\` again. Use \`elapsed += deltaTime\` directly.
+3.  Rotation units: Use radians (clockwise positive in Pixi). One full turn = \`2 * Math.PI\`.
+4.  Phase ends and clamping: At phase or animation boundaries, always clamp to the exact final values first (e.g., final scale/rotation), THEN call \`this.setState('ENDED')\` (or move to next phase). Never end before setting final values.
+5.  BaseAnimate contract: Only implement \`reset()\` and \`update(deltaTime)\`; do not override \`play/pause/resume/setState\`. Keep \`getRequiredSpriteCount()\` consistent with the number of sprites used.
+
+
 **Strict Rules for Test Code:**
 
 1.  **Imports (VERY IMPORTANT):**
     *   Use \`import { describe, it, expect, vi, beforeEach } from 'vitest';\`
     *   **For the Animation Class you are testing:** You MUST use a relative path. The path from the test file to the animation file is always the same: \`import { YourClassName } from '../../src/animations/YourClassName';\`
-    *   **For ALL other library code (\`BaseObject\`, \`BaseAnimate\`, etc.):** You MUST use the 'pixi-animation-library' alias. Example: \`import { BaseObject, BaseAnimate } from 'pixi-animation-library';\`
+    *   **For ALL other library code (\`BaseObject\`, \`BaseAnimate\`, etc.):** You MUST use the '@pixi-animation-library/pixiani-core' alias. Example: \`import { BaseObject, BaseAnimate } from '@pixi-animation-library/pixiani-core';\`
     *   Do NOT use relative paths like \`../../src/core/BaseObject.ts\`. Only use the alias.
-    *   You can import the class-under-test and the library code in the same statement: \`import { YourClassName, BaseObject } from 'pixi-animation-library';\` is WRONG. It must be two separate imports as described above.
+    *   You can import the class-under-test and the library code in the same statement: \`import { YourClassName, BaseObject } from '@pixi-animation-library/pixiani-core';\` is WRONG. It must be two separate imports as described above.
 2.  **Structure:**
     *   Use a \`describe\` block for the animation class.
     *   Use \`beforeEach\` to set up a clean instance of your animation before each test.
@@ -100,6 +113,12 @@ const systemInstruction = `You are an expert TypeScript developer specializing i
   *   Use \`vi.mock('pixi.js', async () => { const actual = await vi.importActual('pixi.js'); return { ...actual, Sprite: vi.fn().mockImplementation(factory) }; })\`.
   *   Only mock what you need (commonly \`Sprite\` and simple methods like \`anchor.set\`, \`scale.set\`). Keep the mock minimal, deterministic, and per-test reset with \`vi.clearAllMocks()\`.
   *   Do NOT rely on global or implicit pixi behavior. Tests must be self-contained and deterministic.
+
+4.  **Timing in Tests (IMPORTANT):**
+  *   Treat \`deltaTime\` as seconds when simulating frames (e.g., 0.016, 0.5, 1.0, etc.).
+  *   Do NOT multiply \`deltaTime\` by speed again when stepping time. If you set \`anim.speed = 2\`, the effective duration halves even though you still pass seconds to \`update()\`.
+  *   Use approximate assertions with a small epsilon (e.g., 1e-2) for floating-point checks at key times (0s/0.5s/1s/.../end).
+  *   At boundary frames, assert final properties first, then assert state equals ENDED to avoid including \`reset()\` side effects.
 `;
 
 const generationConfig = {
@@ -392,7 +411,7 @@ function run_tests(sessionId: string, className: string): Promise<string> {
       'animations',
       `${className}.test.ts`,
     );
-    const command = `SESSION_TESTS=1 npx vitest run "${testFilePath}" --root "${ROOT_DIR}"`;
+    const command = `SESSION_TESTS=1 pnpm -w vitest run "${testFilePath}" --root "${ROOT_DIR}"`;
 
     console.warn(`[${sessionId}] Running tests for ${className}: ${command}`);
 
@@ -408,7 +427,7 @@ function run_tests(sessionId: string, className: string): Promise<string> {
         combinedOutput.includes('Cannot convert a Symbol value to a string') ||
         combinedOutput.includes('Cannot convert a Symbol value to string')
       ) {
-        resultMessage = `SYSTEM_ERROR: Test runner failed due to an environment issue (e.g., missing file, bad import path, or incompatible native/module build). Do not attempt to fix this by modifying code. Stop and report the issue. Original error:\n\n${combinedOutput}`;
+        resultMessage = `SYSTEM_ERROR: Test runner failed due to an environment issue (e.g., missing file, bad import path, or incompatible native/module build). Do not attempt to fix this by modifying code. Stop and report the issue. Original error:\n\n${combinedOutput}\n\nHint: Ensure vitest.config.ts includes session globs like .sessions/**/tests/**/*.test.ts and that --root points to the repo root.`;
       } else if (error) {
         resultMessage = `Tests failed for ${className}:\n\nSTDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`;
       } else if (stderr) {
@@ -573,6 +592,7 @@ async function main() {
     decorateReply: false,
   });
 
+  // Register Fastify-Vite using the folder that contains vite.config.ts (apps/editor)
   await server.register(fastifyVite, {
     root: resolve(__dirname),
     dev: true,
@@ -847,6 +867,9 @@ async function main() {
             ],
           });
 
+          // Before the next turn, capture a preview of the model text from this turn
+          const previewForClient = fullText;
+
           // Get the stream for the next turn.
           const contStart = Date.now();
           await logWorkflow(sessionId, 'model_continue_start', {
@@ -863,11 +886,13 @@ async function main() {
           const contEnd = Date.now();
           await logWorkflow(sessionId, 'model_continue_end', {
             durationMs: contEnd - contStart,
+            responsePreview: previewForClient,
           });
           writeEvent({
             type: 'heartbeat',
             phase: 'model_continue_end',
             durationMs: contEnd - contStart,
+            responsePreview: previewForClient,
           });
 
           if (i === MAX_STEPS - 1) {

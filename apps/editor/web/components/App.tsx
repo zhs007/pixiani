@@ -15,7 +15,7 @@ import {
   StairBounceAnimation,
   ArcBounce3sAnimation,
   ScaleRotateScale,
-} from 'pixi-animation-library';
+} from '@pixi-animation-library/pixiani-core';
 import { v4 as uuidv4 } from 'uuid';
 
 import { ChatPanel } from './ChatPanel';
