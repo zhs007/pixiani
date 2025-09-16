@@ -3,11 +3,11 @@
     "target": "ESNext",
     "module": "ESNext",
     "lib": ["ESNext", "DOM"],
-    "moduleResolution": "node",
+  "moduleResolution": "bundler",
     "baseUrl": ".",
     "paths": {
       "@pixi-animation-library/pixiani-core": ["packages/pixiani-core/src/index.ts"],
-      "@pixi-animation-library/pixiani-core/*": ["packages/pixiani-core/src/*"]
+  "@pixi-animation-library/pixiani-core/*": ["packages/pixiani-core/src/*"]
     },
     "strict": true,
     "esModuleInterop": true,

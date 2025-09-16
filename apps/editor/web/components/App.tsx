@@ -37,6 +37,8 @@ export const App = () => {
   const [availableAnimations, setAvailableAnimations] =
     useState<AnimateClass[]>([]);
   const [selectedAnimationName, setSelectedAnimationName] = useState<string>('');
+  // Keep a persistent reference to the built-in animations so we can reset or query later
+  const standardAnimationsRef = useRef<AnimateClass[]>([]);
 
   // Toast helpers
   const [toast, setToast] = useState<string | null>(null);
@@ -96,8 +98,9 @@ export const App = () => {
         .map((mod) => mod[Object.keys(mod)[0]] as AnimateClass)
         .filter(Boolean);
 
-      // Register all standard animations and get the list
-      const standardAnimations = registerAllAnimations(animationManager);
+  // Register all standard animations and get the list
+  const standardAnimations = registerAllAnimations(animationManager);
+  standardAnimationsRef.current = standardAnimations;
       // Register the custom ones
       customAnimClasses.forEach((anim) => animationManager.register(anim));
 
@@ -493,8 +496,14 @@ export const App = () => {
     try {
       localStorage.removeItem(`selectedAnim:${sessionId}`);
     } catch {}
-    setAvailableAnimations(standardAnimations);
-    setSelectedAnimationName(standardAnimations[0].animationName);
+    const std = standardAnimationsRef.current;
+    if (std && std.length > 0) {
+      setAvailableAnimations(std);
+      setSelectedAnimationName(std[0].animationName);
+    } else {
+      setAvailableAnimations([]);
+      setSelectedAnimationName('');
+    }
     lastCustomNamesRef.current = new Set();
     hasLoadedCustomOnceRef.current = false;
   };
@@ -571,7 +580,8 @@ export const App = () => {
   };
 
   const handleDownload = async () => {
-    const isStandard = standardAnimations.some((a) => a.animationName === selectedAnimationName);
+    const std = standardAnimationsRef.current;
+    const isStandard = std.some((a) => a.animationName === selectedAnimationName);
     if (isStandard) {
       alert('Cannot download standard, built-in animations.');
       return;
