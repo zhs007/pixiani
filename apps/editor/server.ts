@@ -20,9 +20,13 @@ const pump = util.promisify(pipeline);
 // --- Setup ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const SESSIONS_DIR = resolve(__dirname, '../.sessions');
-const ASSETS_SPRITE_DIR = resolve(__dirname, '../assets/sprite');
-const ROOT_DIR = resolve(__dirname, '..');
+// Place sessions at repo root to match Vite fs.allow and frontend dynamic imports
+const SESSIONS_DIR = resolve(__dirname, '../../.sessions');
+// Serve assets from the repo-level assets/sprite directory
+const ASSETS_SPRITE_DIR = resolve(__dirname, '../../assets/sprite');
+// apps/ directory
+// Repository root (used for Vitest root so it can access .sessions/* tests)
+const ROOT_DIR = resolve(__dirname, '../..');
 
 const PROXY_URL =
   process.env.HTTPS_PROXY ||
@@ -392,7 +396,7 @@ function run_tests(sessionId: string, className: string): Promise<string> {
       'animations',
       `${className}.test.ts`,
     );
-    const command = `SESSION_TESTS=1 npx vitest run "${testFilePath}" --root "${ROOT_DIR}"`;
+  const command = `SESSION_TESTS=1 pnpm -w vitest run "${testFilePath}" --root "${ROOT_DIR}"`;
 
     console.warn(`[${sessionId}] Running tests for ${className}: ${command}`);
 
@@ -403,12 +407,12 @@ function run_tests(sessionId: string, className: string): Promise<string> {
       let resultMessage: string;
       // Detect unrecoverable environment errors and return SYSTEM_ERROR so the agent stops trying to fix code
       if (
-        combinedOutput.includes('No test files found') ||
+  combinedOutput.includes('No test files found') ||
         combinedOutput.includes('Failed to resolve import') ||
         combinedOutput.includes('Cannot convert a Symbol value to a string') ||
         combinedOutput.includes('Cannot convert a Symbol value to string')
       ) {
-        resultMessage = `SYSTEM_ERROR: Test runner failed due to an environment issue (e.g., missing file, bad import path, or incompatible native/module build). Do not attempt to fix this by modifying code. Stop and report the issue. Original error:\n\n${combinedOutput}`;
+  resultMessage = `SYSTEM_ERROR: Test runner failed due to an environment issue (e.g., missing file, bad import path, or incompatible native/module build). Do not attempt to fix this by modifying code. Stop and report the issue. Original error:\n\n${combinedOutput}\n\nHint: Ensure vitest.config.ts includes session globs like .sessions/**/tests/**/*.test.ts and that --root points to the repo root.`;
       } else if (error) {
         resultMessage = `Tests failed for ${className}:\n\nSTDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`;
       } else if (stderr) {
@@ -573,6 +577,7 @@ async function main() {
     decorateReply: false,
   });
 
+  // Register Fastify-Vite using the folder that contains vite.config.ts (apps/editor)
   await server.register(fastifyVite, {
     root: resolve(__dirname),
     dev: true,
@@ -847,6 +852,9 @@ async function main() {
             ],
           });
 
+          // Before the next turn, capture a preview of the model text from this turn
+          const previewForClient = fullText;
+
           // Get the stream for the next turn.
           const contStart = Date.now();
           await logWorkflow(sessionId, 'model_continue_start', {
@@ -863,11 +871,13 @@ async function main() {
           const contEnd = Date.now();
           await logWorkflow(sessionId, 'model_continue_end', {
             durationMs: contEnd - contStart,
+            responsePreview: previewForClient,
           });
           writeEvent({
             type: 'heartbeat',
             phase: 'model_continue_end',
             durationMs: contEnd - contStart,
+            responsePreview: previewForClient,
           });
 
           if (i === MAX_STEPS - 1) {
