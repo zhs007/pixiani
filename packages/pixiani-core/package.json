@@ -1,8 +1,0 @@
-{
-  "name": "@pixi-animation-library/pixiani-core",
-  "version": "0.0.0",
-  "private": true,
-  "deprecated": true,
-  "description": "Deprecated: use @pixi-animation-library/pixiani-engine and @pixi-animation-library/pixiani-anis.",
-  "files": []
-}
