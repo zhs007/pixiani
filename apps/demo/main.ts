@@ -2,11 +2,7 @@ import * as PIXI from 'pixi.js';
 import {
   AnimationManager,
   BaseObject,
-  ScaleAnimation,
-  FadeAnimation,
-  ComplexPopAnimation,
-  FlagWaveAnimation,
-  VortexAnimation,
+  registerAllAnimations,
   AnimateClass,
 } from '@pixi-animation-library/pixiani-core';
 
@@ -128,16 +124,14 @@ async function init() {
   canvasContainer.appendChild(app.canvas);
 
   // 2. Register animations
-  [ScaleAnimation, FadeAnimation, ComplexPopAnimation, FlagWaveAnimation, VortexAnimation].forEach(
-    (animClass) => {
-      registeredAnimations.set(animClass.animationName, animClass);
-      const option = document.createElement('option');
-      option.value = animClass.animationName;
-      option.textContent = animClass.animationName;
-      animationSelect.appendChild(option);
-      manager.register(animClass);
-    },
-  );
+  const allAnimationClasses = registerAllAnimations(manager);
+  allAnimationClasses.forEach((animClass: any) => {
+    registeredAnimations.set(animClass.animationName, animClass);
+    const option = document.createElement('option');
+    option.value = animClass.animationName;
+    option.textContent = animClass.animationName;
+    animationSelect.appendChild(option);
+  });
 
   // 3. Setup UI and event listeners
   animationSelect.addEventListener('change', updateSpriteSlots);

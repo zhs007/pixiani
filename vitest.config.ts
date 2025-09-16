@@ -4,10 +4,17 @@ import { resolve } from 'path';
 export default defineConfig({
   resolve: {
     alias: {
-      // Ensure tests in sessions resolve the workspace core pkg consistently
       '@pixi-animation-library/pixiani-core': resolve(
         __dirname,
         './packages/pixiani-core/src/index.ts',
+      ),
+      '@pixi-animation-library/pixiani-anis': resolve(
+        __dirname,
+        './packages/pixiani-anis/src/index.ts',
+      ),
+      '@pixi-animation-library/pixiani-engine': resolve(
+        __dirname,
+        './packages/pixiani-engine/src/index.ts',
       ),
     },
   },

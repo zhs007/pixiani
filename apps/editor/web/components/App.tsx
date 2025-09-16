@@ -3,39 +3,14 @@ import * as PIXI from 'pixi.js';
 import {
   AnimationManager,
   BaseObject,
-  ScaleAnimation,
-  FadeAnimation,
-  ComplexPopAnimation,
-  FlagWaveAnimation,
-  VortexAnimation,
-  BlackHoleSpiralAnimation,
-  ParticleSpinAnimation,
-  CoinV2Animation,
+  registerAllAnimations,
   AnimateClass,
-  StairBounceAnimation,
-  ArcBounce3sAnimation,
-  ScaleRotateScale,
 } from '@pixi-animation-library/pixiani-core';
 import { v4 as uuidv4 } from 'uuid';
 
 import { ChatPanel } from './ChatPanel';
 import { PreviewPanel } from './PreviewPanel';
 import { AssetSelectionModal } from './AssetSelectionModal';
-
-// --- Constants & Initial Setup ---
-const standardAnimations: AnimateClass[] = [
-  ScaleAnimation,
-  FadeAnimation,
-  ComplexPopAnimation,
-  FlagWaveAnimation,
-  VortexAnimation,
-  BlackHoleSpiralAnimation,
-  ParticleSpinAnimation,
-  CoinV2Animation,
-  StairBounceAnimation,
-  ArcBounce3sAnimation,
-  ScaleRotateScale,
-];
 
 // --- Main App Component ---
 export const App = () => {
@@ -60,10 +35,8 @@ export const App = () => {
   // Animation manager and UI state
   const animationManager = React.useMemo(() => new AnimationManager(), []);
   const [availableAnimations, setAvailableAnimations] =
-    useState<AnimateClass[]>(standardAnimations);
-  const [selectedAnimationName, setSelectedAnimationName] = useState<string>(
-    standardAnimations[0]?.animationName,
-  );
+    useState<AnimateClass[]>([]);
+  const [selectedAnimationName, setSelectedAnimationName] = useState<string>('');
 
   // Toast helpers
   const [toast, setToast] = useState<string | null>(null);
@@ -123,9 +96,18 @@ export const App = () => {
         .map((mod) => mod[Object.keys(mod)[0]] as AnimateClass)
         .filter(Boolean);
 
+      // Register all standard animations and get the list
+      const standardAnimations = registerAllAnimations(animationManager);
+      // Register the custom ones
+      customAnimClasses.forEach((anim) => animationManager.register(anim));
+
       const allAnims = [...standardAnimations, ...customAnimClasses];
-      allAnims.forEach((anim) => animationManager.register(anim));
       setAvailableAnimations(allAnims);
+
+      // Set initial selection if not already set
+      if (!selectedAnimationName && allAnims.length > 0) {
+        setSelectedAnimationName(allAnims[0].animationName);
+      }
 
       // Detect newly added custom animations to show a toast
       const currentNames = new Set(list.map((i) => i.name));
