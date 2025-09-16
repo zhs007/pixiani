@@ -86,6 +86,15 @@ const systemInstruction = `You are an expert TypeScript developer specializing i
     *   Call \`this.setState('ENDED')\` from \`update()\` to finish the animation.
 3.  **File Output:** The file must contain only the single exported class.
 
+**Runtime & Timing Rules (Very Important):**
+
+1.  Time units: The \`deltaTime\` passed to \`update(deltaTime)\` is in SECONDS. Do not treat it as milliseconds, and do not multiply by \`1000/60\`.
+2.  Speed handling: The AnimationManager already applies both global speed and per-animation \`anim.speed\` BEFORE calling \`update()\`. Inside the animation, do NOT multiply time by \`this.speed\` again. Use \`elapsed += deltaTime\` directly.
+3.  Rotation units: Use radians (clockwise positive in Pixi). One full turn = \`2 * Math.PI\`.
+4.  Phase ends and clamping: At phase or animation boundaries, always clamp to the exact final values first (e.g., final scale/rotation), THEN call \`this.setState('ENDED')\` (or move to next phase). Never end before setting final values.
+5.  BaseAnimate contract: Only implement \`reset()\` and \`update(deltaTime)\`; do not override \`play/pause/resume/setState\`. Keep \`getRequiredSpriteCount()\` consistent with the number of sprites used.
+
+
 **Strict Rules for Test Code:**
 
 1.  **Imports (VERY IMPORTANT):**
@@ -104,6 +113,12 @@ const systemInstruction = `You are an expert TypeScript developer specializing i
   *   Use \`vi.mock('pixi.js', async () => { const actual = await vi.importActual('pixi.js'); return { ...actual, Sprite: vi.fn().mockImplementation(factory) }; })\`.
   *   Only mock what you need (commonly \`Sprite\` and simple methods like \`anchor.set\`, \`scale.set\`). Keep the mock minimal, deterministic, and per-test reset with \`vi.clearAllMocks()\`.
   *   Do NOT rely on global or implicit pixi behavior. Tests must be self-contained and deterministic.
+
+4.  **Timing in Tests (IMPORTANT):**
+  *   Treat \`deltaTime\` as seconds when simulating frames (e.g., 0.016, 0.5, 1.0, etc.).
+  *   Do NOT multiply \`deltaTime\` by speed again when stepping time. If you set \`anim.speed = 2\`, the effective duration halves even though you still pass seconds to \`update()\`.
+  *   Use approximate assertions with a small epsilon (e.g., 1e-2) for floating-point checks at key times (0s/0.5s/1s/.../end).
+  *   At boundary frames, assert final properties first, then assert state equals ENDED to avoid including \`reset()\` side effects.
 `;
 
 const generationConfig = {
