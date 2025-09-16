@@ -16,7 +16,7 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-  # Let the action read the version from package.json's "packageManager" to avoid conflicts
+      # Let the action read the version from package.json's "packageManager" to avoid conflicts
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

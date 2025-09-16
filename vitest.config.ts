@@ -31,8 +31,6 @@ export default defineConfig({
       inline: ['pixi.js'],
     },
     // Use setup from core package if present; optional in sessions
-    setupFiles: [
-      resolve(__dirname, './packages/pixiani-core/tests/setup/staging-mock-pixi.ts'),
-    ],
+    setupFiles: [resolve(__dirname, './packages/pixiani-core/tests/setup/staging-mock-pixi.ts')],
   },
 });

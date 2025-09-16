@@ -411,7 +411,7 @@ function run_tests(sessionId: string, className: string): Promise<string> {
       'animations',
       `${className}.test.ts`,
     );
-  const command = `SESSION_TESTS=1 pnpm -w vitest run "${testFilePath}" --root "${ROOT_DIR}"`;
+    const command = `SESSION_TESTS=1 pnpm -w vitest run "${testFilePath}" --root "${ROOT_DIR}"`;
 
     console.warn(`[${sessionId}] Running tests for ${className}: ${command}`);
 
@@ -422,12 +422,12 @@ function run_tests(sessionId: string, className: string): Promise<string> {
       let resultMessage: string;
       // Detect unrecoverable environment errors and return SYSTEM_ERROR so the agent stops trying to fix code
       if (
-  combinedOutput.includes('No test files found') ||
+        combinedOutput.includes('No test files found') ||
         combinedOutput.includes('Failed to resolve import') ||
         combinedOutput.includes('Cannot convert a Symbol value to a string') ||
         combinedOutput.includes('Cannot convert a Symbol value to string')
       ) {
-  resultMessage = `SYSTEM_ERROR: Test runner failed due to an environment issue (e.g., missing file, bad import path, or incompatible native/module build). Do not attempt to fix this by modifying code. Stop and report the issue. Original error:\n\n${combinedOutput}\n\nHint: Ensure vitest.config.ts includes session globs like .sessions/**/tests/**/*.test.ts and that --root points to the repo root.`;
+        resultMessage = `SYSTEM_ERROR: Test runner failed due to an environment issue (e.g., missing file, bad import path, or incompatible native/module build). Do not attempt to fix this by modifying code. Stop and report the issue. Original error:\n\n${combinedOutput}\n\nHint: Ensure vitest.config.ts includes session globs like .sessions/**/tests/**/*.test.ts and that --root points to the repo root.`;
       } else if (error) {
         resultMessage = `Tests failed for ${className}:\n\nSTDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`;
       } else if (stderr) {
