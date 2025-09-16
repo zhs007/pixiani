@@ -62,7 +62,6 @@ export default [
     },
     rules: {
       'no-undef': 'off',
-      'unused-imports/no-unused-imports': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
     },
   },
@@ -77,7 +76,6 @@ export default [
     languageOptions: { globals: { ...globals.node } },
     rules: {
       'no-undef': 'off',
-      'unused-imports/no-unused-imports': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
     },
   },
