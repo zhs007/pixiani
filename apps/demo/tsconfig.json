@@ -3,8 +3,9 @@
   "compilerOptions": {
     "composite": true,
     "noEmit": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "types": ["vite/client"]
   },
-  "include": ["."],
+  "include": [".", "../../packages/pixiani-core/src/**/*.ts"],
   "exclude": ["node_modules"]
 }

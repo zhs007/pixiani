@@ -5,9 +5,6 @@
     "noEmit": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "paths": {
-      "@pixi-animation-library/pixiani-core": ["../../packages/pixiani-core/src/index.ts"]
-    },
     "types": ["node", "vite/client", "react", "react-dom"]
   },
   "include": ["server.ts", "web/**/*.ts", "web/**/*.tsx", "vite.config.ts", "types/**/*.d.ts"],
