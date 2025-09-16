@@ -1,10 +1,6 @@
 import * as PIXI from 'pixi.js';
-import {
-  AnimationManager,
-  BaseObject,
-  registerAllAnimations,
-  AnimateClass,
-} from '@pixi-animation-library/pixiani-core';
+import { AnimationManager, BaseObject, type AnimateClass } from '@pixi-animation-library/pixiani-engine';
+import { registerAllAnimations } from '@pixi-animation-library/pixiani-anis';
 
 // --- Configuration ---
 const CANVAS_WIDTH = 360;

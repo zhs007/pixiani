@@ -1,24 +1,8 @@
 {
   "name": "@pixi-animation-library/pixiani-core",
-  "version": "1.0.0",
-  "main": "./dist/index.js",
-  "module": "./dist/index.mjs",
-  "types": "./dist/index.d.ts",
-  "scripts": {
-    "build": "vite build",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@pixi-animation-library/pixiani-engine": "workspace:*",
-    "@pixi-animation-library/pixiani-anis": "workspace:*"
-  },
-  "devDependencies": {
-    "typescript": "^5.4.5",
-    "vite": "^7.1.3",
-    "vite-plugin-dts": "^4.5.4"
-  },
-  "files": [
-    "dist",
-    "src"
-  ]
+  "version": "0.0.0",
+  "private": true,
+  "deprecated": true,
+  "description": "Deprecated: use @pixi-animation-library/pixiani-engine and @pixi-animation-library/pixiani-anis.",
+  "files": []
 }

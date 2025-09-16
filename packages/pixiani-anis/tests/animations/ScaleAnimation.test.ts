@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ScaleAnimation } from '../src/animations/ScaleAnimation';
+import { ScaleAnimation } from '../../src/animations/ScaleAnimation';
 import { BaseObject } from '@pixi-animation-library/pixiani-engine';
 import * as PIXI from 'pixi.js';
 

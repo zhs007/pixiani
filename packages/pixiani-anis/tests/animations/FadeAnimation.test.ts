@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { FadeAnimation } from '../src/animations/FadeAnimation';
+import { FadeAnimation } from '../../src/animations/FadeAnimation';
 import { BaseObject } from '@pixi-animation-library/pixiani-engine';
 import * as PIXI from 'pixi.js';
 

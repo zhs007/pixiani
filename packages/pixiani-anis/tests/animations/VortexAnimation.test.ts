@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { VortexAnimation } from '../src/animations/VortexAnimation';
+import { VortexAnimation } from '../../src/animations/VortexAnimation';
 import { BaseObject } from '@pixi-animation-library/pixiani-engine';
 import * as PIXI from 'pixi.js';
 

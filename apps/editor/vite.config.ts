@@ -33,15 +33,12 @@ export default defineConfig({
 
   resolve: {
     alias: {
-      '@pixi-animation-library/pixiani-core': resolve(
-        __dirname,
-        '../../packages/pixiani-core/src/index.ts',
-      ),
+      // No direct alias to core; use published/internal packages instead
     },
   },
 
   optimizeDeps: {
-    exclude: ['@pixi-animation-library/pixiani-core'],
+    exclude: [],
   },
 
   build: {

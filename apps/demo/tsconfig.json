@@ -6,6 +6,6 @@
     "isolatedModules": true,
     "types": ["vite/client"]
   },
-  "include": [".", "../../packages/pixiani-core/src/**/*.ts"],
+  "include": ["."],
   "exclude": ["node_modules"]
 }

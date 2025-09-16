@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { FlagWaveAnimation } from '../src/animations/FlagWaveAnimation';
+import { FlagWaveAnimation } from '../../src/animations/FlagWaveAnimation';
 import { BaseObject } from '@pixi-animation-library/pixiani-engine';
 import * as PIXI from 'pixi.js';
 

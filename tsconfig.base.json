@@ -4,11 +4,8 @@
     "module": "ESNext",
     "lib": ["ESNext", "DOM"],
   "moduleResolution": "bundler",
-    "baseUrl": ".",
-    "paths": {
-      "@pixi-animation-library/pixiani-core": ["packages/pixiani-core/src/index.ts"],
-  "@pixi-animation-library/pixiani-core/*": ["packages/pixiani-core/src/*"]
-    },
+  "baseUrl": ".",
+  "paths": {},
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

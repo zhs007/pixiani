@@ -1,0 +1,1 @@
+Deprecated package. Use @pixi-animation-library/pixiani-engine and @pixi-animation-library/pixiani-anis.

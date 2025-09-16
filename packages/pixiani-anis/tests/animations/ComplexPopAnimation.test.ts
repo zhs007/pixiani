@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ComplexPopAnimation } from '../src/animations/ComplexPopAnimation';
+import { ComplexPopAnimation } from '../../src/animations/ComplexPopAnimation';
 import { BaseObject } from '@pixi-animation-library/pixiani-engine';
 import * as PIXI from 'pixi.js';
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ParticleSpinAnimation } from '../src/animations/ParticleSpinAnimation';
+import { ParticleSpinAnimation } from '../../src/animations/ParticleSpinAnimation';
 import { BaseObject } from '@pixi-animation-library/pixiani-engine';
 import * as PIXI from 'pixi.js';
 

@@ -1,11 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as PIXI from 'pixi.js';
-import {
-  AnimationManager,
-  BaseObject,
-  registerAllAnimations,
-  AnimateClass,
-} from '@pixi-animation-library/pixiani-core';
+import { AnimationManager, BaseObject } from '@pixi-animation-library/pixiani-engine';
+import { registerAllAnimations } from '@pixi-animation-library/pixiani-anis';
+import type { AnimateClass } from '@pixi-animation-library/pixiani-engine';
 import { v4 as uuidv4 } from 'uuid';
 
 import { ChatPanel } from './ChatPanel';

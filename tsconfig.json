@@ -7,7 +7,6 @@
   "files": [],
   "include": [],
   "references": [
-    { "path": "packages/pixiani-core" },
   { "path": "packages/pixiani-engine" },
     { "path": "apps/demo" },
     { "path": "apps/editor" }

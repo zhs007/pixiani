@@ -12,7 +12,17 @@ import globals from 'globals';
 
 export default [
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '.sessions/**'],
+    ignores: [
+      'dist/**',
+      '**/dist/**',
+      'node_modules/**',
+      'coverage/**',
+      '.sessions/**',
+      'apps/**/dist/**',
+      'packages/**/dist/**',
+      'apps/**/public/**',
+      'assets/**',
+    ],
   },
   js.configs.recommended,
   {
@@ -63,6 +73,24 @@ export default [
     rules: {
       'no-undef': 'off',
       'no-empty': ['error', { allowEmptyCatch: true }],
+    },
+  },
+  // Forbid using pixiani-core inside the editor and demo apps; use engine/anis instead
+  {
+    files: ['editor/**/*.{ts,tsx,js,jsx}', 'demo/**/*.{ts,tsx,js,jsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@pixi-animation-library/pixiani-core',
+              message:
+                'Do not import pixiani-core in apps. Use @pixi-animation-library/pixiani-engine or @pixi-animation-library/pixiani-anis instead.',
+            },
+          ],
+        },
+      ],
     },
   },
   {

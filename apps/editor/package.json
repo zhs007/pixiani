@@ -8,7 +8,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@pixi-animation-library/pixiani-core": "workspace:*",
+  "@pixi-animation-library/pixiani-engine": "workspace:*",
+  "@pixi-animation-library/pixiani-anis": "workspace:*",
     "@fastify/multipart": "^9.0.3",
     "@fastify/static": "*",
     "@fastify/vite": "*",

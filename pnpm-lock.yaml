@@ -50,9 +50,12 @@ importers:
 
   apps/demo:
     dependencies:
-      '@pixi-animation-library/pixiani-core':
+      '@pixi-animation-library/pixiani-anis':
         specifier: workspace:*
-        version: link:../../packages/pixiani-core
+        version: link:../../packages/pixiani-anis
+      '@pixi-animation-library/pixiani-engine':
+        specifier: workspace:*
+        version: link:../../packages/pixiani-engine
       pixi.js:
         specifier: ^8.1.6
         version: 8.13.2
@@ -78,9 +81,12 @@ importers:
       '@google/genai':
         specifier: '*'
         version: 1.19.0
-      '@pixi-animation-library/pixiani-core':
+      '@pixi-animation-library/pixiani-anis':
         specifier: workspace:*
-        version: link:../../packages/pixiani-core
+        version: link:../../packages/pixiani-anis
+      '@pixi-animation-library/pixiani-engine':
+        specifier: workspace:*
+        version: link:../../packages/pixiani-engine
       '@types/busboy':
         specifier: ^1.5.4
         version: 1.5.4
