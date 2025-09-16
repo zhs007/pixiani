@@ -107,6 +107,9 @@ importers:
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
+      undici:
+        specifier: ^6.19.7
+        version: 6.21.3
       uuid:
         specifier: '*'
         version: 13.0.0
@@ -5117,6 +5120,13 @@ packages:
         integrity: sha512-kt1ZriHTi7MU+Z/r9DOdAI3ONdaR3M3csEaRc6ewa4f4dTvX4cQCbJ4NkEn0ohE4hHtq85+PhPSTY+pO/1PwgA==,
       }
 
+  undici@6.21.3:
+    resolution:
+      {
+        integrity: sha512-gBLkYIlEnSp8pFbT64yFgGE6UIB9tAkhukC23PmMDCe5Nd+cRqKxSjw5y54MK2AZMgZfJWMaNE4nYUHgi1XEOw==,
+      }
+    engines: { node: '>=18.17' }
+
   unified@11.0.5:
     resolution:
       {
@@ -8855,6 +8865,8 @@ snapshots:
       which-boxed-primitive: 1.1.1
 
   undici-types@7.11.0: {}
+
+  undici@6.21.3: {}
 
   unified@11.0.5:
     dependencies:
