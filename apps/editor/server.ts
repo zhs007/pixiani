@@ -935,7 +935,24 @@ async function main() {
   });
 
   await server.vite.ready();
-  await server.listen({ port: 3000 });
+
+  // Read host and port from environment variables so the server can be configured
+  // by the deployment or dev environment. Priority:
+  // 1. EDITOR_HOST / EDITOR_PORT (explicit for this app)
+  // 2. HOST / PORT (generic)
+  // 3. fallback defaults: 0.0.0.0:3000
+  const HOST = process.env.EDITOR_HOST || process.env.HOST || '0.0.0.0';
+  const PORT = Number(process.env.EDITOR_PORT || process.env.PORT || 3000);
+
+  if (Number.isNaN(PORT) || PORT <= 0 || PORT > 65535) {
+    server.log.error(
+      `Invalid port number provided: ${process.env.EDITOR_PORT || process.env.PORT}`,
+    );
+    process.exit(1);
+  }
+
+  server.log.info(`[editor] Listening on ${HOST}:${PORT}`);
+  await server.listen({ port: PORT, host: HOST });
 }
 
 main();

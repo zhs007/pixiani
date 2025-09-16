@@ -3,6 +3,7 @@
 ## 1. Task Summary
 
 The task was to refactor the `editor` application's environment setup for better maintainability. This involved two main changes:
+
 1.  Externalizing the hardcoded `systemInstruction` prompt for the Gemini agent into a separate file.
 2.  Updating the `.env.example` file to include all available environment variables for the editor server, ensuring it serves as complete documentation for configuration.
 
@@ -40,6 +41,7 @@ The process was smooth and did not present any significant challenges. The initi
 ## 4. Outcome
 
 The task was completed successfully.
+
 - The editor server is now more maintainable, with the large system prompt separated from the server logic.
 - The `.env.example` file is now a complete reference for configuring the editor, improving the developer experience.
 - All code changes are verified by the project's build and test scripts.
