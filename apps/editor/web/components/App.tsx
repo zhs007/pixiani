@@ -1,41 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as PIXI from 'pixi.js';
-import {
-  AnimationManager,
-  BaseObject,
-  ScaleAnimation,
-  FadeAnimation,
-  ComplexPopAnimation,
-  FlagWaveAnimation,
-  VortexAnimation,
-  BlackHoleSpiralAnimation,
-  ParticleSpinAnimation,
-  CoinV2Animation,
-  AnimateClass,
-  StairBounceAnimation,
-  ArcBounce3sAnimation,
-  ScaleRotateScale,
-} from '@pixi-animation-library/pixiani-core';
+import { AnimationManager, BaseObject } from '@pixi-animation-library/pixiani-engine';
+import { registerAllAnimations } from '@pixi-animation-library/pixiani-anis';
+import type { AnimateClass } from '@pixi-animation-library/pixiani-engine';
 import { v4 as uuidv4 } from 'uuid';
 
 import { ChatPanel } from './ChatPanel';
 import { PreviewPanel } from './PreviewPanel';
 import { AssetSelectionModal } from './AssetSelectionModal';
-
-// --- Constants & Initial Setup ---
-const standardAnimations: AnimateClass[] = [
-  ScaleAnimation,
-  FadeAnimation,
-  ComplexPopAnimation,
-  FlagWaveAnimation,
-  VortexAnimation,
-  BlackHoleSpiralAnimation,
-  ParticleSpinAnimation,
-  CoinV2Animation,
-  StairBounceAnimation,
-  ArcBounce3sAnimation,
-  ScaleRotateScale,
-];
 
 // --- Main App Component ---
 export const App = () => {
@@ -59,11 +31,10 @@ export const App = () => {
 
   // Animation manager and UI state
   const animationManager = React.useMemo(() => new AnimationManager(), []);
-  const [availableAnimations, setAvailableAnimations] =
-    useState<AnimateClass[]>(standardAnimations);
-  const [selectedAnimationName, setSelectedAnimationName] = useState<string>(
-    standardAnimations[0]?.animationName,
-  );
+  const [availableAnimations, setAvailableAnimations] = useState<AnimateClass[]>([]);
+  const [selectedAnimationName, setSelectedAnimationName] = useState<string>('');
+  // Keep a persistent reference to the built-in animations so we can reset or query later
+  const standardAnimationsRef = useRef<AnimateClass[]>([]);
 
   // Toast helpers
   const [toast, setToast] = useState<string | null>(null);
@@ -123,9 +94,19 @@ export const App = () => {
         .map((mod) => mod[Object.keys(mod)[0]] as AnimateClass)
         .filter(Boolean);
 
+      // Register all standard animations and get the list
+      const standardAnimations = registerAllAnimations(animationManager);
+      standardAnimationsRef.current = standardAnimations;
+      // Register the custom ones
+      customAnimClasses.forEach((anim) => animationManager.register(anim));
+
       const allAnims = [...standardAnimations, ...customAnimClasses];
-      allAnims.forEach((anim) => animationManager.register(anim));
       setAvailableAnimations(allAnims);
+
+      // Set initial selection if not already set
+      if (!selectedAnimationName && allAnims.length > 0) {
+        setSelectedAnimationName(allAnims[0].animationName);
+      }
 
       // Detect newly added custom animations to show a toast
       const currentNames = new Set(list.map((i) => i.name));
@@ -511,8 +492,14 @@ export const App = () => {
     try {
       localStorage.removeItem(`selectedAnim:${sessionId}`);
     } catch {}
-    setAvailableAnimations(standardAnimations);
-    setSelectedAnimationName(standardAnimations[0].animationName);
+    const std = standardAnimationsRef.current;
+    if (std && std.length > 0) {
+      setAvailableAnimations(std);
+      setSelectedAnimationName(std[0].animationName);
+    } else {
+      setAvailableAnimations([]);
+      setSelectedAnimationName('');
+    }
     lastCustomNamesRef.current = new Set();
     hasLoadedCustomOnceRef.current = false;
   };
@@ -589,7 +576,8 @@ export const App = () => {
   };
 
   const handleDownload = async () => {
-    const isStandard = standardAnimations.some((a) => a.animationName === selectedAnimationName);
+    const std = standardAnimationsRef.current;
+    const isStandard = std.some((a) => a.animationName === selectedAnimationName);
     if (isStandard) {
       alert('Cannot download standard, built-in animations.');
       return;

@@ -88,6 +88,18 @@
 4.  运行编辑器的开发服务器: `pnpm dev:editor`
 5.  在浏览器中打开 `http://localhost:3000`。
 
+### 环境变量配置
+
+编辑器的行为可以通过根目录下的`.env`文件进行配置。除了必须的`GEMINI_API_KEY`，还支持以下环境变量：
+
+- `GEMINI_MODEL`: 指定使用的Gemini模型，默认为`gemini-1.5-flash`。
+- `SYSTEM_INSTRUCTION_PATH`: 指定代理的系统指令文件的路径。默认为`apps/editor/prompts/system.md`，允许开发者轻松定制代理的行为。
+- `AGENT_CONTINUE_TIMEOUT_MS`: 控制代理响应流的空闲超时时间（毫秒）。如果在此时间内没有收到来自Gemini API的新数据，连接将关闭。默认为`30000`。
+- `AGENT_CONTINUE_RETRIES`: 连接到Gemini API时的重试次数。默认为`1`。
+- `PROXY_URL` (或 `HTTPS_PROXY`): 为Gemini API请求配置HTTP/S代理。
+
+`.env.example`文件提供了所有这些变量的模板。
+
 ### TDD 工作流
 
 为了提高 AI 生成代码的质量和可靠性，编辑器后端实现了一个**自主的、自动化的测试驱动开发（TDD）循环**。当用户提交一个动画需求后，Agent 会自动执行完整的工作流，并通过流式响应将进度实时反馈给用户。

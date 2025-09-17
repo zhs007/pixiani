@@ -1,5 +1,5 @@
 import React from 'react';
-import { AnimateClass } from '@pixi-animation-library/pixiani-core';
+import type { AnimateClass } from '@pixi-animation-library/pixiani-engine';
 
 type PreviewPanelProps = {
   pixiContainerRef: React.RefObject<HTMLDivElement | null>;

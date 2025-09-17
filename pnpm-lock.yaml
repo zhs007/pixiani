@@ -49,9 +49,12 @@ importers:
 
   apps/demo:
     dependencies:
-      '@pixi-animation-library/pixiani-core':
+      '@pixi-animation-library/pixiani-anis':
         specifier: workspace:*
-        version: link:../../packages/pixiani-core
+        version: link:../../packages/pixiani-anis
+      '@pixi-animation-library/pixiani-engine':
+        specifier: workspace:*
+        version: link:../../packages/pixiani-engine
       pixi.js:
         specifier: ^8.1.6
         version: 8.13.2
@@ -77,9 +80,12 @@ importers:
       '@google/genai':
         specifier: '*'
         version: 1.19.0
-      '@pixi-animation-library/pixiani-core':
+      '@pixi-animation-library/pixiani-anis':
         specifier: workspace:*
-        version: link:../../packages/pixiani-core
+        version: link:../../packages/pixiani-anis
+      '@pixi-animation-library/pixiani-engine':
+        specifier: workspace:*
+        version: link:../../packages/pixiani-engine
       '@types/busboy':
         specifier: ^1.5.4
         version: 1.5.4
@@ -139,7 +145,54 @@ importers:
         specifier: ^7.1.3
         version: 7.1.5(@types/node@24.4.0)(tsx@4.20.5)
 
+  packages/pixiani-anis:
+    dependencies:
+      '@pixi-animation-library/pixiani-engine':
+        specifier: workspace:*
+        version: link:../pixiani-engine
+    devDependencies:
+      '@vitest/coverage-v8':
+        specifier: ^3.2.4
+        version: 3.2.4(vitest@3.2.4(@types/debug@4.1.12)(@types/node@24.4.0)(jsdom@26.1.0)(tsx@4.20.5))
+      jsdom:
+        specifier: ^26.1.0
+        version: 26.1.0
+      pixi.js:
+        specifier: ^8.1.6
+        version: 8.13.2
+      typescript:
+        specifier: ^5.4.5
+        version: 5.9.2
+      vite:
+        specifier: ^7.1.3
+        version: 7.1.5(@types/node@24.4.0)(tsx@4.20.5)
+      vite-plugin-dts:
+        specifier: ^4.5.4
+        version: 4.5.4(@types/node@24.4.0)(rollup@4.50.2)(typescript@5.9.2)(vite@7.1.5(@types/node@24.4.0)(tsx@4.20.5))
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/debug@4.1.12)(@types/node@24.4.0)(jsdom@26.1.0)(tsx@4.20.5)
+
   packages/pixiani-core:
+    dependencies:
+      '@pixi-animation-library/pixiani-anis':
+        specifier: workspace:*
+        version: link:../pixiani-anis
+      '@pixi-animation-library/pixiani-engine':
+        specifier: workspace:*
+        version: link:../pixiani-engine
+    devDependencies:
+      typescript:
+        specifier: ^5.4.5
+        version: 5.9.2
+      vite:
+        specifier: ^7.1.3
+        version: 7.1.5(@types/node@24.4.0)(tsx@4.20.5)
+      vite-plugin-dts:
+        specifier: ^4.5.4
+        version: 4.5.4(@types/node@24.4.0)(rollup@4.50.2)(typescript@5.9.2)(vite@7.1.5(@types/node@24.4.0)(tsx@4.20.5))
+
+  packages/pixiani-engine:
     dependencies:
       pixi.js:
         specifier: ^8.1.6

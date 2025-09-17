@@ -4,10 +4,13 @@ import { resolve } from 'path';
 export default defineConfig({
   resolve: {
     alias: {
-      // Ensure tests in sessions resolve the workspace core pkg consistently
-      '@pixi-animation-library/pixiani-core': resolve(
+      '@pixi-animation-library/pixiani-anis': resolve(
         __dirname,
-        './packages/pixiani-core/src/index.ts',
+        './packages/pixiani-anis/src/index.ts',
+      ),
+      '@pixi-animation-library/pixiani-engine': resolve(
+        __dirname,
+        './packages/pixiani-engine/src/index.ts',
       ),
     },
   },
@@ -30,7 +33,7 @@ export default defineConfig({
     deps: {
       inline: ['pixi.js'],
     },
-    // Use setup from core package if present; optional in sessions
-    setupFiles: [resolve(__dirname, './packages/pixiani-core/tests/setup/staging-mock-pixi.ts')],
+    // Use setup from engine package; optional in sessions
+    setupFiles: [resolve(__dirname, './packages/pixiani-engine/tests/setup/staging-mock-pixi.ts')],
   },
 });
