@@ -26,7 +26,7 @@
     },
     {
       "path": "packages/pixiani-anis/src/animations/BlackHoleSpiralAnimation.ts",
-      "description": "A spiral animation that simulates a black hole effect."
+      "description": "A mesh-based black-hole spiral that deforms the sprite using a PIXI.MeshPlane to create swirling vertex displacements."
     },
     {
       "path": "packages/pixiani-anis/src/animations/CoinV2Animation.ts",
@@ -42,11 +42,11 @@
     },
     {
       "path": "packages/pixiani-anis/src/animations/FlagWaveAnimation.ts",
-      "description": "An animation that simulates a waving flag."
+      "description": "A mesh-based waving effect that deforms the source sprite using a PIXI.MeshPlane (vertex grid)."
     },
     {
       "path": "packages/pixiani-anis/src/animations/ParticleSpinAnimation.ts",
-      "description": "An animation with spinning particles."
+      "description": "A particle-based effect that spawns many small sprites from the source texture; particles are simulated with gravity, collisions and fade-out. Uses a custom particle system (not a MeshPlane)."
     },
     {
       "path": "packages/pixiani-anis/src/animations/ScaleAnimation.ts",
@@ -62,7 +62,7 @@
     },
     {
       "path": "packages/pixiani-anis/src/animations/VortexAnimation.ts",
-      "description": "A vortex animation that pulls sprites towards the center."
+      "description": "A mesh-based vortex (black hole) effect that uses PIXI.MeshPlane to distort the source sprite's texture."
     },
     {
       "path": "packages/pixiani-anis/src/index.ts",
