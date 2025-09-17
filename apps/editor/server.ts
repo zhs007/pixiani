@@ -233,17 +233,35 @@ const tools: any = [
 // --- Tool Implementations ---
 
 async function get_allowed_files(sessionId?: string): Promise<string> {
-  const animationFiles = await glob('src/animations/*.ts');
-  const testFiles = await glob('tests/animations/*.test.ts');
-  const coreFiles = await glob('src/core/*.ts');
-  const allFiles = [...animationFiles, ...testFiles, ...coreFiles];
-  const out = `Allowed files:\n${allFiles.join('\n')}`;
-  if (sessionId) {
-    try {
-      await logToolCall(sessionId, 'get_allowed_files', {}, { result: allFiles });
-    } catch {}
+  try {
+    const allowedFilesPath = resolve(__dirname, 'allowed_files.json');
+    const fileContent = await fs.readFile(allowedFilesPath, 'utf-8');
+    if (sessionId) {
+      try {
+        // We log the whole object so the agent can see descriptions
+        await logToolCall(
+          sessionId,
+          'get_allowed_files',
+          {},
+          { result: JSON.parse(fileContent) },
+        );
+      } catch {}
+    }
+    return fileContent;
+  } catch (e: any) {
+    const errorMessage = `Error reading allowed files list: ${e.message}`;
+    console.error(`[${sessionId}] ${errorMessage}`);
+    if (sessionId) {
+      try {
+        await logToolCall(sessionId, 'get_allowed_files', {}, { error: e.message });
+      } catch {}
+    }
+    // Return a structured error in JSON format
+    return JSON.stringify({
+      error: 'Could not retrieve the list of allowed files.',
+      details: e.message,
+    });
   }
-  return out;
 }
 
 async function read_file(filepath: string, sessionId?: string): Promise<string> {

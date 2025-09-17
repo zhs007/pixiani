@@ -76,7 +76,7 @@ The editor's backend implements a Test-Driven Development (TDD) loop for the wor
 
 The worker agent has access to a specific set of tools (function calls) that you, as the "meta-agent", are responsible for maintaining. These tools are:
 
-- `get_allowed_files()`: Lists existing animation and test files.
+- `get_allowed_files()`: Returns a JSON object containing a list of files that can be read. Each file object has a `path` and a `description`.
 - `read_file(filepath)`: Reads a file.
 - `create_animation_file(className, code)`: Creates the animation source file.
 - `create_test_file(className, code)`: Creates the test file.

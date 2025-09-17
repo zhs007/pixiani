@@ -66,6 +66,12 @@
 - `pnpm test`: 运行所有测试。
 - `pnpm lint`: 对整个项目进行代码风格检查。
 
+### `allowed_files.json`
+
+The `apps/editor/allowed_files.json` file contains a list of files that the Gemini agent is allowed to read. Each entry in the file includes a `path` and a `description` of the file. This allows the agent to understand the purpose of each file without having to read it first.
+
+When adding new files to the core engine or animation packages, this file should be updated to include the new files.
+
 ## 开发进度
 
 - [x] **任务 1: 项目初始化与结构搭建** - 完成
