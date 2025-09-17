@@ -1,5 +1,9 @@
 import * as PIXI from 'pixi.js';
-import { AnimationManager, BaseObject, type AnimateClass } from '@pixi-animation-library/pixiani-engine';
+import {
+  AnimationManager,
+  BaseObject,
+  type AnimateClass,
+} from '@pixi-animation-library/pixiani-engine';
 import { registerAllAnimations } from '@pixi-animation-library/pixiani-anis';
 
 // --- Configuration ---

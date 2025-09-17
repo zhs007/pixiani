@@ -8,8 +8,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-  "@pixi-animation-library/pixiani-engine": "workspace:*",
-  "@pixi-animation-library/pixiani-anis": "workspace:*",
+    "@pixi-animation-library/pixiani-engine": "workspace:*",
+    "@pixi-animation-library/pixiani-anis": "workspace:*",
     "pixi.js": "^8.1.6"
   },
   "devDependencies": {

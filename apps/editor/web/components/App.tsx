@@ -31,8 +31,7 @@ export const App = () => {
 
   // Animation manager and UI state
   const animationManager = React.useMemo(() => new AnimationManager(), []);
-  const [availableAnimations, setAvailableAnimations] =
-    useState<AnimateClass[]>([]);
+  const [availableAnimations, setAvailableAnimations] = useState<AnimateClass[]>([]);
   const [selectedAnimationName, setSelectedAnimationName] = useState<string>('');
   // Keep a persistent reference to the built-in animations so we can reset or query later
   const standardAnimationsRef = useRef<AnimateClass[]>([]);
@@ -95,9 +94,9 @@ export const App = () => {
         .map((mod) => mod[Object.keys(mod)[0]] as AnimateClass)
         .filter(Boolean);
 
-  // Register all standard animations and get the list
-  const standardAnimations = registerAllAnimations(animationManager);
-  standardAnimationsRef.current = standardAnimations;
+      // Register all standard animations and get the list
+      const standardAnimations = registerAllAnimations(animationManager);
+      standardAnimationsRef.current = standardAnimations;
       // Register the custom ones
       customAnimClasses.forEach((anim) => animationManager.register(anim));
 

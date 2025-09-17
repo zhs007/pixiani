@@ -33,7 +33,7 @@ export default defineConfig({
     deps: {
       inline: ['pixi.js'],
     },
-  // Use setup from engine package; optional in sessions
-  setupFiles: [resolve(__dirname, './packages/pixiani-engine/tests/setup/staging-mock-pixi.ts')],
+    // Use setup from engine package; optional in sessions
+    setupFiles: [resolve(__dirname, './packages/pixiani-engine/tests/setup/staging-mock-pixi.ts')],
   },
 });
