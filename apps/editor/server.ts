@@ -239,12 +239,7 @@ async function get_allowed_files(sessionId?: string): Promise<string> {
     if (sessionId) {
       try {
         // We log the whole object so the agent can see descriptions
-        await logToolCall(
-          sessionId,
-          'get_allowed_files',
-          {},
-          { result: JSON.parse(fileContent) },
-        );
+        await logToolCall(sessionId, 'get_allowed_files', {}, { result: JSON.parse(fileContent) });
       } catch {}
     }
     return fileContent;

@@ -17,8 +17,8 @@
 
 ### Monorepo 结构
 
- - `packages/pixiani-engine`: core animation library (types, managers, base classes).
- - `packages/pixiani-anis`: animation implementations built on the engine.
+- `packages/pixiani-engine`: core animation library (types, managers, base classes).
+- `packages/pixiani-anis`: animation implementations built on the engine.
 - `apps/demo`: 用于测试和演示动画的 Vite 应用。
 - `apps/editor`: Gemini 动画编辑器。
 

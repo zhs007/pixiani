@@ -7,8 +7,8 @@ Refactor the project to use `pnpm` and `Turborepo` and restructure it into a mon
 - Use `pnpm` for package management.
 - Use `Turborepo` to manage the monorepo.
 - Core animation logic (`src`) will be split into two packages under `packages/`:
-    - `pixiani-engine` (core logic, types)
-    - `pixiani-anis` (animation implementations)
+  - `pixiani-engine` (core logic, types)
+  - `pixiani-anis` (animation implementations)
 - `demo` and `editor` will depend on `pixiani-engine` and `pixiani-anis`.
 - All npm scripts will be managed by `Turborepo`.
 
