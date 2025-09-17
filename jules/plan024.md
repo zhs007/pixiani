@@ -6,9 +6,10 @@ Refactor the project to use `pnpm` and `Turborepo` and restructure it into a mon
 
 - Use `pnpm` for package management.
 - Use `Turborepo` to manage the monorepo.
-- Core animation logic (`src`) will become a separate package `pixiani-core` under `packages/`.
-- `demo` and `editor` will become separate applications under `apps/`.
-- `demo` and `editor` will depend on `pixiani-core`.
+- Core animation logic (`src`) will be split into two packages under `packages/`:
+    - `pixiani-engine` (core logic, types)
+    - `pixiani-anis` (animation implementations)
+- `demo` and `editor` will depend on `pixiani-engine` and `pixiani-anis`.
 - All npm scripts will be managed by `Turborepo`.
 
 ## 2. Task Breakdown
@@ -19,14 +20,14 @@ Refactor the project to use `pnpm` and `Turborepo` and restructure it into a mon
 2.  **Create `turbo.json`:** Set up the initial Turborepo configuration.
 3.  **Create directory structure:** Create `apps/` and `packages/` directories.
 
-### Step 2: Create `pixiani-core` Package
+### Step 2: Create `pixiani-engine` and `pixiani-anis` Packages
 
-1.  **Move source files:** Move the existing `src/` directory to `packages/pixiani-core/src`.
-2.  **Move test files:** Move the existing `tests/` directory to `packages/pixiani-core/tests`.
-3.  **Create `package.json`:** Create a `package.json` for `pixiani-core`.
-    - It will contain dependencies like `pixi.js`.
-    - It will have its own build and test scripts.
-4.  **Create `tsconfig.json`:** Create a `tsconfig.json` for the `pixiani-core` package.
+1.  **Move source files:** Split `src/` into `packages/pixiani-engine/src` (core) and `packages/pixiani-anis/src` (animations).
+2.  **Move test files:** Place tests under `packages/pixiani-engine/tests` and `packages/pixiani-anis/tests` according to the code being tested.
+3.  **Create `package.json` for each package:** Create a `package.json` for `pixiani-engine` and another for `pixiani-anis`.
+    - Each will contain appropriate dependencies such as `pixi.js` and package-specific dev deps.
+    - Each will have its own build and test scripts as needed.
+4.  **Create `tsconfig.json` for each package:** Create `tsconfig.json` files for both `pixiani-engine` and `pixiani-anis` packages.
 5.  **Update `vite.lib.config.ts`:** Move and update the vite config for building the library.
 
 ### Step 3: Create `demo` and `editor` Apps
@@ -34,8 +35,8 @@ Refactor the project to use `pnpm` and `Turborepo` and restructure it into a mon
 1.  **Move `demo` app:** Move the `demo/` directory to `apps/demo`.
 2.  **Move `editor` app:** Move the `editor/` directory to `apps/editor`.
 3.  **Create `package.json` for each app:**
-    - `apps/demo/package.json` will depend on `pixiani-core` using `workspace:*`.
-    - `apps/editor/package.json` will also depend on `pixiani-core` using `workspace:*`.
+    - `apps/demo/package.json` will depend on `@pixi-animation-library/pixiani-engine` and `@pixi-animation-library/pixiani-anis` using `workspace:*`.
+    - `apps/editor/package.json` will also depend on those two packages using `workspace:*`.
     - Dependencies from the root `package.json` will be moved to the respective app's `package.json`.
 4.  **Create `tsconfig.json` for each app.**
 5.  **Update vite configs:** Update `vite.config.ts` in both `demo` and `editor` to work within the monorepo.
