@@ -30,7 +30,7 @@ Before starting, please install dependencies using `pnpm install`.
 1.  **TypeScript:**
     - Use strict mode (`"strict": true` in `tsconfig.json`).
     - Provide explicit types for all function parameters, return values, and class properties. Avoid `any` unless absolutely necessary.
-    - All core interfaces and types should be defined in `packages/pixiani-core/src/core/types.ts`.
+    - All core interfaces and types should be defined in `packages/pixiani-engine/src/core/types.ts`.
 
 2.  **Comments:**
     - Use JSDoc for all exported classes, methods, functions, and types.
@@ -38,14 +38,15 @@ Before starting, please install dependencies using `pnpm install`.
 
 3.  **Modularity:**
     - Keep files small and focused on a single responsibility.
-    - The core library is located in `packages/pixiani-core`.
-    - New animations should be placed in their own file under `packages/pixiani-core/src/animations/`.
-    - Core logic (managers, base classes) resides in `packages/pixiani-core/src/core/`.
+    - The core library is located in `packages/pixiani-engine` (core logic, types).
+    - Animation implementations live in `packages/pixiani-anis/src/animations/`.
+    - Core logic (managers, base classes) resides in `packages/pixiani-engine/src/core/`.
 
 4.  **Testing:**
     - All new features or bug fixes must be accompanied by unit tests.
     - Aim for a test coverage of at least 90% for logical parts of the codebase.
-    - Tests for a file `packages/pixiani-core/src/path/to/file.ts` should be located at `packages/pixiani-core/tests/path/to/file.test.ts`.
+    - Tests for a core file `packages/pixiani-engine/src/path/to/file.ts` should be located at `packages/pixiani-engine/tests/path/to/file.test.ts`.
+    - Tests for animation implementations `packages/pixiani-anis/src/animations/...` go in `packages/pixiani-anis/tests/animations/...`.
 
 ## Agent Workflow
 

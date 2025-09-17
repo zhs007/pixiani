@@ -84,9 +84,9 @@ export default [
         {
           paths: [
             {
-              name: '@pixi-animation-library/pixiani-core',
+              name: '@pixi-animation-library/pixiani-engine',
               message:
-                'Do not import pixiani-core in apps. Use @pixi-animation-library/pixiani-engine or @pixi-animation-library/pixiani-anis instead.',
+                'Do not import the internal engine source in apps. Import @pixi-animation-library/pixiani-engine or @pixi-animation-library/pixiani-anis via the package exports instead.',
             },
           ],
         },

@@ -13,9 +13,9 @@ The refactoring was executed according to the plan in `jules/plan024.md`. The ma
     - Set up `Turborepo` with a `turbo.json` file to manage the monorepo tasks.
     - Created the `apps/` and `packages/` directories.
 
-2.  **`pixiani-core` Package Creation:**
-    - The core animation logic from `src/` and tests from `tests/` were moved to a new package at `packages/pixiani-core`.
-    - A `package.json`, `tsconfig.json`, and `vite.config.ts` were created for this package.
+2.  **`pixiani-engine` / `pixiani-anis` Package Creation:**
+    - The core animation logic from `src/` was split into two packages: `packages/pixiani-engine` (core runtime, types) and `packages/pixiani-anis` (animation implementations).
+    - Each package has its own `package.json`, `tsconfig.json`, and `vite.config.ts` as needed. `pixiani-engine` is configured to emit type declarations used by `pixiani-anis` and apps.
 
 3.  **`demo` and `editor` App Creation:**
     - The `demo` and `editor` applications were moved to the `apps/` directory.
@@ -44,4 +44,4 @@ The refactoring was executed according to the plan in `jules/plan024.md`. The ma
 
 ## 4. Final Outcome
 
-The project is now successfully refactored into a monorepo managed by pnpm and Turborepo. The core logic is isolated in the `pixiani-core` package, and the `demo` and `editor` apps are located in the `apps` directory. All packages can be built and tested from the root of the project. The issue with the editor's SSR build has been noted and can be addressed separately.
+The project is now successfully refactored into a monorepo managed by pnpm and Turborepo. The core logic is split into `pixiani-engine` and `pixiani-anis`; the legacy `packages/pixiani-core` package has been deprecated and removed. The `demo` and `editor` apps are located in the `apps` directory and depend on the new packages. All packages can be built and tested from the root of the project. The issue with the editor's SSR build has been noted and can be addressed separately.
