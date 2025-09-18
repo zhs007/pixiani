@@ -1,4 +1,20 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+/**
+ * Streaming SSE Event Types Documentation (frontend)
+ * The server may now emit these event objects (JSON via EventSource):
+ *  - { type: 'delta', text } incremental partial model text if ENABLE_STREAM_DELTA=1.
+ *  - { type: 'heartbeat', phase, responsePreview? } periodic keep-alive; when phase==='model_continue_end'
+ *    includes responsePreview (whole accumulated text) for legacy preview typing.
+ *  - { type: 'warning', message } size cap or truncation related warnings.
+ *  - { type: 'final_response', text, truncated?, sizeCapped? } final model answer for the turn. If truncated
+ *    or sizeCapped is true the server might auto-issue a continuation internally.
+ *  - { type: 'tool_call', name, arguments } model invoked a tool.
+ *  - { type: 'tool_response', name, response } tool produced output.
+ *  - { type: 'workflow_complete', className, filePath } animation + test successfully published.
+ *  - { type: 'error', message } fatal error handling the request.
+ *  - { type: 'session_id', sessionId } assigned or reused session ID.
+ * The UI merges both delta and heartbeat(preview) paths into a single typewriter effect.
+ */
 import * as PIXI from 'pixi.js';
 import { AnimationManager, BaseObject } from '@pixi-animation-library/pixiani-engine';
 import { registerAllAnimations } from '@pixi-animation-library/pixiani-anis';
@@ -12,11 +28,22 @@ import { AssetSelectionModal } from './AssetSelectionModal';
 // --- Main App Component ---
 export const App = () => {
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<{ type: 'user' | 'gemini'; text: string }[]>([]);
+  type ChatMessage = {
+    type: 'user' | 'gemini';
+    text: string;
+    variant?: 'error' | 'suggestion' | 'info';
+    suggestions?: string[];
+  };
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isThinking, setIsThinking] = useState(false);
   const hasLoadedCustomOnceRef = React.useRef(false);
   const lastCustomNamesRef = React.useRef<Set<string>>(new Set());
+  // Retry support
+  const lastPromptRef = useRef<string | null>(null);
+  const [retryAvailable, setRetryAvailable] = useState(false);
+  const [retryToolAvailable, setRetryToolAvailable] = useState(false);
+  const [continueAvailable, setContinueAvailable] = useState(false);
 
   const pixiAppRef = useRef<PIXI.Application | null>(null);
   const pixiContainerRef = useRef<HTMLDivElement>(null);
@@ -241,15 +268,12 @@ export const App = () => {
   }, [animationManager]);
 
   // --- Event Handlers ---
-  const handleSendMessage = () => {
-    if (!inputText.trim() || isThinking) return;
-
-    const currentPrompt = inputText;
-    setMessages((prev) => [...prev, { type: 'user', text: currentPrompt }]);
-    setInputText('');
+  const sendPrompt = (prompt: string) => {
+    lastPromptRef.current = prompt;
+    setMessages((prev) => [...prev, { type: 'user', text: prompt }]);
     setIsThinking(true);
-
-    const url = `/api/chat?prompt=${encodeURIComponent(currentPrompt)}&sessionId=${sessionId || ''}`;
+    setRetryAvailable(false);
+    const url = `/api/chat?prompt=${encodeURIComponent(prompt)}&sessionId=${sessionId || ''}`;
     expectedCloseRef.current = false;
     const eventSource = new EventSource(url);
 
@@ -260,18 +284,68 @@ export const App = () => {
         const data = JSON.parse(event.data);
 
         switch (data.type) {
+          case 'model_thought': {
+            // Internal reasoning (debug). Shown only as informational message.
+            setMessages((prev) => [
+              ...prev,
+              { type: 'gemini', text: `🤔 ${data.text}`, variant: 'info' },
+            ]);
+            break;
+          }
+          case 'model_note': {
+            setMessages((prev) => [
+              ...prev,
+              { type: 'gemini', text: `*${data.note || '模型无直接文本输出'}*`, variant: 'info' },
+            ]);
+            break;
+          }
+          case 'delta': {
+            // Incremental partial text chunks when ENABLE_STREAM_DELTA is on server-side.
+            // We reuse the existing typewriter pipeline by queueing delta text directly.
+            const deltaText = data.text || '';
+            if (!deltaText) break;
+            if (!typingRef.current) {
+              setMessages((prev) => {
+                const next = [...prev, { type: 'gemini' as const, text: '' }];
+                typingRef.current = { index: next.length - 1, text: '' };
+                return next;
+              });
+            }
+            pendingTextRef.current += deltaText;
+            if (!typingTimerRef.current) {
+              typingTimerRef.current = window.setInterval(() => {
+                if (!pendingTextRef.current) {
+                  if (typingTimerRef.current) {
+                    window.clearInterval(typingTimerRef.current);
+                    typingTimerRef.current = null;
+                  }
+                  return;
+                }
+                const CHARS_PER_TICK = 4;
+                const chunk = pendingTextRef.current.slice(0, CHARS_PER_TICK);
+                pendingTextRef.current = pendingTextRef.current.slice(CHARS_PER_TICK);
+                const newText = (typingRef.current?.text || '') + chunk;
+                typingRef.current = typingRef.current
+                  ? { ...typingRef.current, text: newText }
+                  : { index: 0, text: newText };
+                const idx = typingRef.current?.index;
+                setMessages((prev) => {
+                  if (idx === undefined) return prev;
+                  return prev.map((m, i) => (i === idx ? { ...m, text: newText } : m));
+                });
+              }, 24);
+            }
+            break;
+          }
           case 'heartbeat': {
-            // Show streaming model thoughts after each tool round-trip; avoid duplicates
+            // Keep previous logic for model_continue_end preview events; ignore pure streaming heartbeats
             if (data.phase === 'model_continue_end' && typeof data.responsePreview === 'string') {
               const preview = data.responsePreview.trim();
               if (!preview) break;
               const prevFull = lastModelMsgRef.current || '';
               if (preview === prevFull) break;
-              // Compute delta to type
               const delta = preview.startsWith(prevFull) ? preview.slice(prevFull.length) : preview;
               lastModelMsgRef.current = preview;
-
-              // Ensure we have a live typing message
               if (!typingRef.current) {
                 setMessages((prev) => {
                   const next = [...prev, { type: 'gemini' as const, text: '' }];
@@ -279,36 +353,39 @@ export const App = () => {
                   return next;
                 });
               }
-              // Queue new delta and start the typewriter if idle
               pendingTextRef.current += delta;
-              const tick = () => {
-                if (!pendingTextRef.current) {
-                  // Nothing to type, stop timer
-                  if (typingTimerRef.current) {
-                    window.clearInterval(typingTimerRef.current);
-                    typingTimerRef.current = null;
-                  }
-                  return;
-                }
-                // Type a few chars per tick for smoothness
-                const CHARS_PER_TICK = 3;
-                const chunk = pendingTextRef.current.slice(0, CHARS_PER_TICK);
-                pendingTextRef.current = pendingTextRef.current.slice(CHARS_PER_TICK);
-                const newText = (typingRef.current?.text || '') + chunk;
-                typingRef.current = typingRef.current
-                  ? { ...typingRef.current, text: newText }
-                  : { index: 0, text: newText };
-                setMessages((prev) =>
-                  prev.map((m, i) =>
-                    i === (typingRef.current as { index: number }).index
-                      ? { ...m, text: newText }
-                      : m,
-                  ),
-                );
-              };
               if (!typingTimerRef.current) {
-                typingTimerRef.current = window.setInterval(tick, 20);
+                typingTimerRef.current = window.setInterval(() => {
+                  if (!pendingTextRef.current) {
+                    if (typingTimerRef.current) {
+                      window.clearInterval(typingTimerRef.current);
+                      typingTimerRef.current = null;
+                    }
+                    return;
+                  }
+                  const CHARS_PER_TICK = 3;
+                  const chunk = pendingTextRef.current.slice(0, CHARS_PER_TICK);
+                  pendingTextRef.current = pendingTextRef.current.slice(CHARS_PER_TICK);
+                  const newText = (typingRef.current?.text || '') + chunk;
+                  typingRef.current = typingRef.current
+                    ? { ...typingRef.current, text: newText }
+                    : { index: 0, text: newText };
+                  const idx = typingRef.current?.index;
+                  setMessages((prev) => {
+                    if (idx === undefined) return prev;
+                    return prev.map((m, i) => (i === idx ? { ...m, text: newText } : m));
+                  });
+                }, 20);
               }
+            }
+            break;
+          }
+          case 'warning': {
+            // Surface a toast for warnings (e.g., size cap, truncation risk)
+            if (typeof data.message === 'string' && data.message) {
+              setToast(data.message);
+              if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+              toastTimerRef.current = window.setTimeout(() => setToast(null), 3500);
             }
             break;
           }
@@ -327,7 +404,6 @@ export const App = () => {
             break;
 
           case 'tool_response': {
-            // Skip noisy responses for file listing/reading tools
             if (
               data.name === 'get_allowed_files' ||
               data.name === 'read_file' ||
@@ -336,7 +412,6 @@ export const App = () => {
               data.name === 'run_tests'
             )
               break;
-            // By default, suppress tool responses in chat; only surface important ones like publish_files
             if (data.name !== 'publish_files') break;
             if (typeof data.response === 'string' && data.response.trim()) {
               setMessages((prev) => [
@@ -349,57 +424,79 @@ export const App = () => {
 
           case 'final_response': {
             geminiResponse = data.text;
-            // Turn off thinking state once we have a final response string
             setIsThinking(false);
-            // Mark last preview to final to avoid duplicate append on close
+            setRetryAvailable(false); // success -> disable retry
+            setRetryToolAvailable(false);
+            setContinueAvailable(false);
+            lastModelMsgRef.current = typeof geminiResponse === 'string' ? geminiResponse : '';
+            const isTruncated = !!data.truncated || !!data.sizeCapped;
+            // If truncated, show a subtle toast so the user knows continuation might occur
+            if (isTruncated) {
+              setToast('响应被截断，可能正在尝试继续...');
+              if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+              toastTimerRef.current = window.setTimeout(() => setToast(null), 2500);
+            }
+            // Finalize the streaming message to avoid duplication/truncation due to queued deltas.
             try {
-              lastModelMsgRef.current = typeof geminiResponse === 'string' ? geminiResponse : '';
-            } catch {}
-            // Reconcile typing to the exact final text
-            try {
-              const currentShown = typingRef.current?.text || '';
-              if (geminiResponse && geminiResponse !== currentShown) {
-                // Append any remaining part quickly
-                const remainder = geminiResponse.startsWith(currentShown)
-                  ? geminiResponse.slice(currentShown.length)
-                  : geminiResponse;
-                pendingTextRef.current += remainder;
-                if (!typingTimerRef.current && remainder) {
-                  typingTimerRef.current = window.setInterval(() => {
-                    const CHARS_PER_TICK = 6; // finish a bit faster for final
-                    if (!pendingTextRef.current) {
-                      if (typingTimerRef.current) {
-                        window.clearInterval(typingTimerRef.current);
-                        typingTimerRef.current = null;
-                      }
-                      return;
-                    }
-                    const chunk = pendingTextRef.current.slice(0, CHARS_PER_TICK);
-                    pendingTextRef.current = pendingTextRef.current.slice(CHARS_PER_TICK);
-                    const newText = (typingRef.current?.text || '') + chunk;
-                    typingRef.current = typingRef.current
-                      ? { ...typingRef.current, text: newText }
-                      : { index: 0, text: newText };
-                    setMessages((prev) =>
-                      prev.map((m, i) =>
-                        i === (typingRef.current as { index: number }).index
-                          ? { ...m, text: newText }
-                          : m,
-                      ),
-                    );
-                  }, 16);
-                }
+              // Stop typewriter if running
+              if (typingTimerRef.current) {
+                window.clearInterval(typingTimerRef.current);
+                typingTimerRef.current = null;
               }
+              // Replace the current streaming message text with the final text if it exists,
+              // otherwise append a new message.
+              if (typingRef.current) {
+                const idx = typingRef.current.index;
+                setMessages((prev) =>
+                  prev.map((m, i) => (i === idx ? { ...m, text: geminiResponse || '' } : m)),
+                );
+              } else if (geminiResponse) {
+                setMessages((prev) => [...prev, { type: 'gemini' as const, text: geminiResponse }]);
+              }
+              // Clear any pending queued characters and reset typing state
+              pendingTextRef.current = '';
+              typingRef.current = null;
             } catch {}
-            // Proactively close the SSE; this is an expected normal end
             expectedCloseRef.current = true;
             try {
               eventSource.close();
             } catch {}
-            // Don't add to messages yet, wait for the stream to close
             break;
           }
 
+          case 'workflow_halt':
+            {
+              // Server indicates a controlled halt (e.g., max steps). Offer Continue.
+              const reason = data.reason || 'halt';
+              setMessages((prev) => [
+                ...prev,
+                {
+                  type: 'gemini',
+                  text: `⚠️ 流程暂停：${reason === 'max_steps' ? '达到最大步骤数' : reason}`,
+                },
+              ]);
+              setContinueAvailable(true);
+              // Halt means model不再思考，启用输入与按钮
+              if (typingTimerRef.current) {
+                window.clearInterval(typingTimerRef.current);
+                typingTimerRef.current = null;
+              }
+              setIsThinking(false);
+              // If marked terminal, we expect the SSE to close; mark expected and close proactively
+              if (data.terminal) {
+                if (typingTimerRef.current) {
+                  window.clearInterval(typingTimerRef.current);
+                  typingTimerRef.current = null;
+                }
+                setIsThinking(false);
+                expectedCloseRef.current = true;
+                try {
+                  eventSource.close();
+                } catch {}
+              }
+              break;
+            }
+            break;
           case 'workflow_complete': {
             const { className, filePath } = data;
             setIsThinking(false);
@@ -426,26 +523,73 @@ export const App = () => {
 
           case 'error':
             setMessages((prev) => [...prev, { type: 'gemini', text: `**错误:** ${data.message}` }]);
-            // Surface a toast for visibility
             setToast(`请求出错：${data.message}`);
             if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
             toastTimerRef.current = window.setTimeout(() => setToast(null), 3000);
+            // If server marks this as terminal, treat it as an expected close to avoid onerror toast
+            if (data.terminal) {
+              if (typingTimerRef.current) {
+                window.clearInterval(typingTimerRef.current);
+                typingTimerRef.current = null;
+              }
+              setIsThinking(false);
+              expectedCloseRef.current = true;
+              try {
+                eventSource.close();
+              } catch {}
+            }
             break;
+
+          case 'tool_retry': {
+            // Show transient retry notice
+            const attempt = data.attempt || 0;
+            const max = data.max || 0;
+            setToast(`工具重试中 (${attempt}/${max})...`);
+            if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+            toastTimerRef.current = window.setTimeout(() => setToast(null), 2000);
+            break;
+          }
+          case 'tool_error': {
+            // Non-transient or exhausted retries - allow tool-level retry
+            if (!data.transient) {
+              setRetryToolAvailable(true);
+              setToast(`工具失败：${data.name}`);
+              if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+              toastTimerRef.current = window.setTimeout(() => setToast(null), 3000);
+            }
+            const suggestions: string[] | undefined = data.suggestions;
+            setMessages((prev) => [
+              ...prev,
+              {
+                type: 'gemini',
+                text: `**工具错误** (${data.name}): ${data.message}`,
+                variant: 'error',
+                suggestions,
+              },
+              ...(suggestions
+                ? suggestions.map(
+                    (s): ChatMessage => ({
+                      type: 'gemini',
+                      text: `建议: ${s}`,
+                      variant: 'suggestion',
+                    }),
+                  )
+                : []),
+            ]);
+            break;
+          }
         }
       } catch (err) {
         console.error('Failed to parse SSE event:', err);
-        // This might be the final closing signal which is not JSON
       }
     };
 
     eventSource.onerror = (_ev) => {
       // Network errors or stream closed. Show a user-visible notice if no final response yet.
-      // Stop any typing interval
       if (typingTimerRef.current) {
         window.clearInterval(typingTimerRef.current);
         typingTimerRef.current = null;
       }
-      // If we intentionally closed after final_response, do not show a network error
       if (expectedCloseRef.current) {
         setIsThinking(false);
         try {
@@ -453,6 +597,16 @@ export const App = () => {
         } catch {}
         return;
       }
+      // If we have a workflow_halt and are offering continue, treat as expected close
+      if (continueAvailable) {
+        setIsThinking(false);
+        try {
+          eventSource.close();
+        } catch {}
+        return;
+      }
+      // Enable retry if we had a prompt
+      if (lastPromptRef.current) setRetryAvailable(true);
       if (geminiResponse && geminiResponse !== lastModelMsgRef.current) {
         setMessages((prev) => [...prev, { type: 'gemini', text: geminiResponse }]);
       } else {
@@ -469,6 +623,57 @@ export const App = () => {
         eventSource.close();
       } catch {}
     };
+  };
+
+  const handleSendMessage = () => {
+    if (!inputText.trim() || isThinking) return;
+    const currentPrompt = inputText;
+    setInputText('');
+    sendPrompt(currentPrompt);
+  };
+
+  const handleRetry = () => {
+    if (isThinking) return;
+    if (lastPromptRef.current) {
+      sendPrompt(lastPromptRef.current);
+    }
+  };
+
+  const handleContinue = () => {
+    if (isThinking) return;
+    setContinueAvailable(false);
+    sendPrompt('CONTINUE');
+  };
+
+  const handleRetryTool = async () => {
+    if (isThinking || !sessionId) return;
+    setIsThinking(true);
+    try {
+      const res = await fetch('/api/retry_last_tool', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        setToast(`工具重试失败: ${json.error || 'unknown'}`);
+        if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = window.setTimeout(() => setToast(null), 3000);
+        setIsThinking(false);
+        return;
+      }
+      setToast('工具重试成功，继续推理...');
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = window.setTimeout(() => setToast(null), 2000);
+      setRetryToolAvailable(false);
+      // Trigger a continuation turn (CONTINUE) so model advances
+      sendPrompt('CONTINUE');
+    } catch (e: any) {
+      setToast(`工具重试异常: ${e?.message || e}`);
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = window.setTimeout(() => setToast(null), 3000);
+      setIsThinking(false);
+    }
   };
 
   const handleNewTask = async () => {
@@ -520,17 +725,14 @@ export const App = () => {
   const handlePlayAnimation = async (spriteUrls: string[]) => {
     const app = pixiAppRef.current;
     if (!app || spriteUrls.length === 0) return;
-    // Ensure stage exists (avoid using a disposed Application)
     if (!(app as any).stage) {
       setToast('渲染器尚未就绪，请稍后重试');
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
       toastTimerRef.current = window.setTimeout(() => setToast(null), 2000);
       return;
     }
-
     if (currentObjectRef.current) {
       const prev = currentObjectRef.current;
-      // Safely remove from stage before destroy
       try {
         if (prev.parent) prev.parent.removeChild(prev);
       } catch {}
@@ -543,29 +745,20 @@ export const App = () => {
       }
       currentObjectRef.current = null;
     }
-
     const animClass = availableAnimations.find((a) => a.animationName === selectedAnimationName);
     if (!animClass) return;
-
     const textures = await Promise.all(spriteUrls.map((url) => PIXI.Assets.load(url)));
     const sprites = textures.map((texture) => new PIXI.Sprite(texture));
-
     const obj = new BaseObject();
     sprites.forEach((s) => {
       s.anchor.set(0.5);
       obj.addChild(s);
     });
-    // Position at the center of the canvas
-    obj.x = app.renderer.width / 2;
-    obj.y = app.renderer.height / 2;
-    if (app.stage) {
-      app.stage.addChild(obj);
-    } else {
-      console.warn('PIXI Application stage is missing. Skipping addChild.');
-      return;
-    }
+    obj.x = (app.renderer as any).width / 2;
+    obj.y = (app.renderer as any).height / 2;
+    if (app.stage) app.stage.addChild(obj);
+    else return;
     currentObjectRef.current = obj;
-
     const anim = animationManager.create(selectedAnimationName, obj, sprites);
     if (anim) {
       anim.loop = loop;
@@ -586,7 +779,6 @@ export const App = () => {
       const res = await fetch(`/api/animation-code/${sessionId}/${selectedAnimationName}`);
       if (!res.ok) throw new Error(`Failed to fetch code: ${res.statusText}`);
       const code = await res.text();
-
       const blob = new Blob([code], { type: 'text/typescript' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -628,6 +820,12 @@ export const App = () => {
         onInputChange={setInputText}
         onSendMessage={handleSendMessage}
         onNewTask={handleNewTask}
+        onRetry={handleRetry}
+        retryAvailable={retryAvailable}
+        onRetryTool={handleRetryTool}
+        retryToolAvailable={retryToolAvailable}
+        onContinue={handleContinue}
+        continueAvailable={continueAvailable}
       />
       <PreviewPanel
         pixiContainerRef={pixiContainerRef}

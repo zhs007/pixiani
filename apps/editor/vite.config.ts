@@ -33,7 +33,12 @@ export default defineConfig({
 
   resolve: {
     alias: {
-      // No direct alias to core; use published/internal packages instead
+      // Map package names to source during dev so session-generated animations can import them
+      '@pixi-animation-library/pixiani-engine': resolve(
+        __dirname,
+        '../../packages/pixiani-engine/src',
+      ),
+      '@pixi-animation-library/pixiani-anis': resolve(__dirname, '../../packages/pixiani-anis/src'),
     },
   },
 

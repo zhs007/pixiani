@@ -43,6 +43,8 @@ if (PROXY_URL) {
 }
 
 const sessions = new Map<string, any[]>();
+// Track the last failed (non-transient) tool call per session for manual retry
+const lastFailedTool: Map<string, { name: string; args: any; error: string }> = new Map();
 
 // --- Gemini AI Configuration ---
 const API_KEY = process.env.GEMINI_API_KEY;
@@ -95,9 +97,32 @@ const safetySettings: SafetySetting[] = [
   },
 ];
 
-// --- Agent continuation controls ---
+// --- Agent continuation & network retry controls ---
+// CONTINUE_TIMEOUT_MS: inactivity timeout for a single streaming turn (ms)
+// CONTINUE_RETRIES: how many continuation turns (auto 'Continue') for truncated responses
+// GENAI_NETWORK_RETRIES: how many times to retry the initial network call to Gemini on network-level failures
+// GENAI_NETWORK_BACKOFF_MS: base backoff in ms (exponential  * 2^attempt, capped)
 const CONTINUE_TIMEOUT_MS = Number(process.env.AGENT_CONTINUE_TIMEOUT_MS ?? 30000);
 const CONTINUE_RETRIES = Number(process.env.AGENT_CONTINUE_RETRIES ?? 1);
+const GENAI_NETWORK_RETRIES = Number(process.env.GENAI_NETWORK_RETRIES ?? 2); // default a bit higher than continuation
+const GENAI_NETWORK_BACKOFF_MS = Number(process.env.GENAI_NETWORK_BACKOFF_MS ?? 800);
+// --- Streaming enhancement environment variables ---
+// Environment feature flags / tuning knobs for streaming robustness:
+// ENABLE_STREAM_DELTA: when '1', emit incremental { type: 'delta', text } events for partial model output.
+// HEARTBEAT_INTERVAL_MS: interval for sending { type: 'heartbeat', phase: 'streaming' } while a stream is active (0 disables).
+// MAX_RESPONSE_CHARS: safety cap to prevent runaway responses; once exceeded we stop appending and mark sizeCapped.
+// INCOMPLETE_RETRY_LIMIT: if the final turn ends truncated (no finishReason or size cap) and no tool call, auto-inject a CONTINUE turn up to this many times.
+const ENABLE_STREAM_DELTA = (process.env.ENABLE_STREAM_DELTA ?? '1') === '1';
+const HEARTBEAT_INTERVAL_MS = Number(process.env.HEARTBEAT_INTERVAL_MS ?? 10000);
+const MAX_RESPONSE_CHARS = Number(process.env.MAX_RESPONSE_CHARS ?? 200000);
+const INCOMPLETE_RETRY_LIMIT = Number(process.env.INCOMPLETE_RETRY_LIMIT ?? 1);
+// Keep the SSE connection alive even when there's no active model stream (e.g., during long tool runs)
+const KEEPALIVE_INTERVAL_MS = Number(process.env.KEEPALIVE_INTERVAL_MS ?? 15000);
+// Whether to expose model internal reasoning/thought parts over SSE (debug only)
+const EXPOSE_MODEL_THOUGHTS = process.env.EXPOSE_MODEL_THOUGHTS === '1';
+// GENAI_NETWORK_RETRIES / GENAI_NETWORK_BACKOFF_MS are defined below with continuation controls but referenced here for clarity:
+//   GENAI_NETWORK_RETRIES: how many additional attempts (besides the first) for initial model stream connection on transient network failures.
+//   GENAI_NETWORK_BACKOFF_MS: base delay for exponential backoff (capped at 6000ms).
 
 const tools: any = [
   {
@@ -233,17 +258,30 @@ const tools: any = [
 // --- Tool Implementations ---
 
 async function get_allowed_files(sessionId?: string): Promise<string> {
-  const animationFiles = await glob('src/animations/*.ts');
-  const testFiles = await glob('tests/animations/*.test.ts');
-  const coreFiles = await glob('src/core/*.ts');
-  const allFiles = [...animationFiles, ...testFiles, ...coreFiles];
-  const out = `Allowed files:\n${allFiles.join('\n')}`;
-  if (sessionId) {
-    try {
-      await logToolCall(sessionId, 'get_allowed_files', {}, { result: allFiles });
-    } catch {}
+  try {
+    const allowedFilesPath = resolve(__dirname, 'allowed_files.json');
+    const fileContent = await fs.readFile(allowedFilesPath, 'utf-8');
+    if (sessionId) {
+      try {
+        // We log the whole object so the agent can see descriptions
+        await logToolCall(sessionId, 'get_allowed_files', {}, { result: JSON.parse(fileContent) });
+      } catch {}
+    }
+    return fileContent;
+  } catch (e: any) {
+    const errorMessage = `Error reading allowed files list: ${e.message}`;
+    console.error(`[${sessionId}] ${errorMessage}`);
+    if (sessionId) {
+      try {
+        await logToolCall(sessionId, 'get_allowed_files', {}, { error: e.message });
+      } catch {}
+    }
+    // Return a structured error in JSON format
+    return JSON.stringify({
+      error: 'Could not retrieve the list of allowed files.',
+      details: e.message,
+    });
   }
-  return out;
 }
 
 async function read_file(filepath: string, sessionId?: string): Promise<string> {
@@ -417,7 +455,7 @@ function run_tests(sessionId: string, className: string): Promise<string> {
 async function publish_files(
   sessionId: string,
   className: string,
-): Promise<{ success: boolean; finalPath?: string }> {
+): Promise<{ success: boolean; finalPath?: string; mode?: string; skippedReason?: string }> {
   // Helper to check file existence
   const exists = async (p: string) => {
     try {
@@ -463,21 +501,50 @@ async function publish_files(
     const haveFinalSrc = await exists(finalSrcPath);
     const haveFinalTest = await exists(finalTestPath);
 
-    // Always publish/overwrite src if a staged src exists
-    if (haveStagingSrc) {
-      await fs.copyFile(stagingSrcPath, finalSrcPath);
-      // remove staged copy to keep staging clean
+    // Duplicate detection: if final exists AND staging exists, compare hashes and skip if identical
+    let duplicate = false;
+    let combinedHashStaging: string | null = null;
+    let combinedHashFinal: string | null = null;
+    if (haveStagingSrc && haveFinalSrc) {
       try {
-        await fs.unlink(stagingSrcPath);
-      } catch {}
+        const stagingSrc = await fs.readFile(stagingSrcPath, 'utf-8');
+        const finalSrc = await fs.readFile(finalSrcPath, 'utf-8');
+        const stagingTest = haveStagingTest ? await fs.readFile(stagingTestPath, 'utf-8') : '';
+        const finalTest = haveFinalTest ? await fs.readFile(finalTestPath, 'utf-8') : '';
+        const hash = (data: string) =>
+          crypto.createHash('sha256').update(data, 'utf8').digest('hex');
+        combinedHashStaging = hash(stagingSrc + '||' + stagingTest);
+        combinedHashFinal = hash(finalSrc + '||' + finalTest);
+        if (combinedHashStaging === combinedHashFinal) {
+          duplicate = true;
+          console.warn(
+            `[${sessionId}] Skipping publish for ${className}: identical content hash ${combinedHashStaging}`,
+          );
+        }
+      } catch (e: any) {
+        console.warn(
+          `[${sessionId}] Hash comparison failed for ${className}, proceeding with publish: ${e.message}`,
+        );
+      }
     }
 
-    // Publish/overwrite test if a staged test exists (tests are optional)
-    if (haveStagingTest) {
-      await fs.copyFile(stagingTestPath, finalTestPath);
-      try {
-        await fs.unlink(stagingTestPath);
-      } catch {}
+    if (!duplicate) {
+      // Always publish/overwrite src if a staged src exists
+      if (haveStagingSrc) {
+        await fs.copyFile(stagingSrcPath, finalSrcPath);
+        // remove staged copy to keep staging clean
+        try {
+          await fs.unlink(stagingSrcPath);
+        } catch {}
+      }
+
+      // Publish/overwrite test if a staged test exists (tests are optional)
+      if (haveStagingTest) {
+        await fs.copyFile(stagingTestPath, finalTestPath);
+        try {
+          await fs.unlink(stagingTestPath);
+        } catch {}
+      }
     }
 
     const srcNowExists = haveStagingSrc || haveFinalSrc || (await exists(finalSrcPath));
@@ -503,15 +570,28 @@ async function publish_files(
     if (testWasMissing)
       logPayload.warning = 'Test file not found in staging or final; published animation only.';
 
-    const mode =
-      haveStagingSrc && haveFinalSrc ? 'overwritten' : haveStagingSrc ? 'published' : 'kept';
+    const mode = duplicate
+      ? 'skipped_duplicate'
+      : haveStagingSrc && haveFinalSrc
+        ? 'overwritten'
+        : haveStagingSrc
+          ? 'published'
+          : 'kept';
+    if (duplicate) {
+      logPayload.skippedReason = 'duplicate_hash_match';
+    }
     console.warn(
-      `[${sessionId}] Published files for ${className} (src ${mode})${testWasMissing ? ' (animation only, no test updated)' : ''}`,
+      `[${sessionId}] ${duplicate ? 'Skip publish (duplicate)' : 'Published files'} for ${className} (src ${mode})${testWasMissing ? ' (animation only, no test updated)' : ''}`,
     );
     try {
       await logToolCall(sessionId, 'publish_files', { className }, { ...logPayload, mode });
     } catch {}
-    return { success: true, finalPath: finalSrcPath };
+    return {
+      success: !duplicate || duplicate,
+      finalPath: finalSrcPath,
+      mode,
+      skippedReason: logPayload.skippedReason,
+    };
   } catch (e: any) {
     console.error(`[${sessionId}] Failed to publish files for ${className}: ${e.message}`);
     try {
@@ -589,14 +669,27 @@ async function main() {
     reply.raw.setHeader('Cache-Control', 'no-cache');
     reply.raw.setHeader('Access-Control-Allow-Origin', '*'); // Allow CORS for dev
 
-    const writeEvent = (data: object) => {
-      reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
-    };
+    // JSON endpoint for retry_last_tool moved outside /api/chat (kept for compatibility)
 
     // --- Main async logic ---
     const run = async () => {
       let sessionId: string;
       let idleTimeout: NodeJS.Timeout | undefined;
+      let shouldCloseSse = false; // whether to end SSE in finally
+      let keepaliveTimer: NodeJS.Timeout | null = null;
+
+      const writeEvent = (data: object) => {
+        try {
+          reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
+          resetIdleTimeout();
+        } catch (e: any) {
+          // If client disconnected, end quietly
+          request.log.warn({ err: e }, 'SSE write failed; closing connection');
+          try {
+            reply.raw.end();
+          } catch {}
+        }
+      };
 
       const resetIdleTimeout = () => {
         if (idleTimeout) clearTimeout(idleTimeout);
@@ -605,7 +698,7 @@ async function main() {
             `Timeout: No data received for ${CONTINUE_TIMEOUT_MS}ms. Closing connection.`,
           );
           server.log.warn(`[${sessionId}] ${error.message}`);
-          writeEvent({ type: 'error', message: error.message });
+          writeEvent({ type: 'error', message: error.message, terminal: true });
           reply.raw.end();
         }, CONTINUE_TIMEOUT_MS);
       };
@@ -627,12 +720,21 @@ async function main() {
           }
         }
         resetIdleTimeout(); // Start the timer as soon as the request is processed
+        // Start connection-level keepalive so proxies/browsers don't drop idle SSE
+        if (KEEPALIVE_INTERVAL_MS > 0) {
+          if (keepaliveTimer) clearInterval(keepaliveTimer);
+          keepaliveTimer = setInterval(() => {
+            writeEvent({ type: 'keepalive', ts: Date.now() });
+          }, KEEPALIVE_INTERVAL_MS);
+        }
 
         const chatHistory = sessions.get(sessionId)!;
         chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
 
         const openStreamWithRetry = async () => {
-          const attempts = Number.isFinite(CONTINUE_RETRIES) ? CONTINUE_RETRIES + 1 : 1;
+          const attempts = Number.isFinite(GENAI_NETWORK_RETRIES)
+            ? Math.max(1, GENAI_NETWORK_RETRIES + 1)
+            : 1;
           let lastErr: any;
           for (let attempt = 0; attempt < attempts; attempt++) {
             try {
@@ -648,11 +750,17 @@ async function main() {
               });
             } catch (e: any) {
               lastErr = e;
-              const waitMs = Math.min(1000 * Math.pow(2, attempt), 5000);
+              // Only retry on network/system transient errors. Heuristic: message contains 'fetch failed' or is a TypeError.
+              const msg = e?.message || String(e);
+              const transient =
+                /fetch failed|ENOTFOUND|ECONNRESET|ETIMEDOUT|EAI_AGAIN/i.test(msg) ||
+                e?.name === 'TypeError';
               server.log.warn(
-                `[${sessionId}] generateContentStream failed (attempt ${attempt + 1}/${attempts}): ${e?.message || e}`,
+                `[${sessionId}] generateContentStream failed (attempt ${attempt + 1}/${attempts}): ${msg} (transient=${transient})`,
               );
+              if (!transient) break; // don't keep retrying on non-network errors
               if (attempt < attempts - 1) {
+                const waitMs = Math.min(GENAI_NETWORK_BACKOFF_MS * Math.pow(2, attempt), 6000);
                 await new Promise((r) => setTimeout(r, waitMs));
               }
             }
@@ -660,107 +768,372 @@ async function main() {
           throw lastErr;
         };
 
-        let stream = await openStreamWithRetry();
+        let stream;
+        try {
+          stream = await openStreamWithRetry();
+        } catch (netErr: any) {
+          const msg = `Network error: ${netErr?.message || netErr}`;
+          server.log.error(`[${sessionId}] ${msg}`);
+          writeEvent({ type: 'error', message: msg, terminal: true });
+          shouldCloseSse = true;
+          // Cannot start streaming; exit and let finally close SSE
+          return;
+        }
 
-        const MAX_STEPS = 10;
+        const MAX_STEPS = Number(process.env.AGENT_MAX_STEPS ?? 10);
+        let incompleteRetries = 0; // count of auto retries for truncated final responses
         for (let i = 0; i < MAX_STEPS; i++) {
           let aggregatedResponse: any = null;
           let functionCalls: any[] = [];
           let fullText = '';
+          let chunkIndex = 0;
+          let sawFinish = false;
+          let sizeCapped = false;
+          let heartbeatTimer: NodeJS.Timeout | null = null;
 
-          for await (const chunk of stream) {
-            resetIdleTimeout(); // Reset timer on each received chunk
-
-            // Aggregate text from all chunks
-            if (chunk.text) {
-              fullText += chunk.text;
+          const startHeartbeat = () => {
+            if (HEARTBEAT_INTERVAL_MS > 0) {
+              if (heartbeatTimer) clearInterval(heartbeatTimer);
+              heartbeatTimer = setInterval(() => {
+                writeEvent({ type: 'heartbeat', phase: 'streaming', ts: Date.now() });
+              }, HEARTBEAT_INTERVAL_MS);
             }
+          };
+          const stopHeartbeat = () => {
+            if (heartbeatTimer) {
+              clearInterval(heartbeatTimer);
+              heartbeatTimer = null;
+            }
+          };
+          startHeartbeat();
 
-            // The last chunk contains other useful details like function calls
-            aggregatedResponse = chunk;
+          try {
+            for await (const chunk of stream) {
+              chunkIndex++;
+              resetIdleTimeout(); // Reset timer on each received chunk
 
-            // We also need to check for function calls in the chunks
-            if (Array.isArray((chunk as any).functionCalls)) {
-              functionCalls.push(...(chunk as any).functionCalls);
+              // Aggregate text from all chunks
+              if ((chunk as any).text && !sizeCapped) {
+                const delta = (chunk as any).text as string;
+                if (fullText.length + delta.length > MAX_RESPONSE_CHARS) {
+                  const allowed = MAX_RESPONSE_CHARS - fullText.length;
+                  if (allowed > 0) {
+                    const partial = delta.slice(0, allowed);
+                    fullText += partial;
+                    if (ENABLE_STREAM_DELTA) writeEvent({ type: 'delta', text: partial });
+                  }
+                  sizeCapped = true;
+                  writeEvent({ type: 'warning', reason: 'size_cap', maxChars: MAX_RESPONSE_CHARS });
+                } else {
+                  fullText += delta;
+                  if (ENABLE_STREAM_DELTA) writeEvent({ type: 'delta', text: delta });
+                }
+              }
+
+              // Track finishReason if exposed by the SDK (defensive)
+              const candidates: any[] | undefined = (chunk as any).candidates;
+              if (candidates && candidates.some((c) => c?.finishReason)) {
+                sawFinish = true;
+              }
+
+              // Optional: parse candidate content parts for thought / reasoning structures
+              if (EXPOSE_MODEL_THOUGHTS && candidates) {
+                try {
+                  for (const cand of candidates) {
+                    const parts = cand?.content?.parts;
+                    if (Array.isArray(parts)) {
+                      for (const p of parts) {
+                        // Different SDK versions may name these differently
+                        const thoughtText = p?.thought || p?.thoughtSignature || p?.reasoning;
+                        if (typeof thoughtText === 'string' && thoughtText.trim()) {
+                          writeEvent({ type: 'model_thought', text: thoughtText });
+                          try {
+                            await logWorkflow(sessionId, 'model_thought', { text: thoughtText });
+                          } catch {}
+                        }
+                      }
+                    }
+                  }
+                } catch (e: any) {
+                  server.log.debug(
+                    `[${sessionId}] Failed to parse model thoughts: ${e?.message || e}`,
+                  );
+                }
+              }
+
+              // The last chunk contains other useful details like function calls
+              aggregatedResponse = chunk;
+
+              // Collect function calls
+              if (Array.isArray((chunk as any).functionCalls)) {
+                functionCalls.push(...(chunk as any).functionCalls);
+              }
+            }
+          } catch (streamErr: any) {
+            // Stream broke mid-way; log partial info and decide whether to retry
+            server.log.error(
+              {
+                err: streamErr,
+                sessionId,
+                chunkIndex,
+                partialTail: fullText.slice(-300),
+              },
+              'Stream error while reading model response',
+            );
+            await logWorkflow(sessionId, 'stream_error', {
+              message: streamErr?.message || String(streamErr),
+              chunkIndex,
+              partialTail: fullText.slice(-300),
+            });
+            // If we have no aggregatedResponse at all, escalate as fatal for this turn
+            if (!aggregatedResponse) {
+              throw new Error(
+                `Model stream aborted before any complete chunk (chunks=${chunkIndex}): ${streamErr?.message || streamErr}`,
+              );
             }
           }
+          stopHeartbeat();
+
           const finalResponse = aggregatedResponse;
 
           if (!finalResponse) {
-            throw new Error('Received no response from model stream.');
+            throw new Error('Received no response from model stream (empty aggregatedResponse).');
+          }
+
+          if (!sawFinish) {
+            await logWorkflow(sessionId, 'stream_incomplete_warning', {
+              note: 'No finishReason detected; response may be truncated.',
+              textLen: fullText.length,
+            });
+            server.log.warn(
+              `[${sessionId}] Stream ended without explicit finishReason (possible truncation).`,
+            );
           }
 
           // After the stream ends, check if we have any function calls.
           if (functionCalls.length === 0) {
-            // If no function calls, the agent is done. Log and send the full accumulated text.
-            await logWorkflow(sessionId, 'final_response', { text: fullText });
-            writeEvent({ type: 'final_response', text: fullText });
+            const truncated = !sawFinish || sizeCapped;
+            await logWorkflow(sessionId, 'final_response', {
+              text: fullText,
+              truncated: truncated || undefined,
+              sizeCapped: sizeCapped || undefined,
+            });
+            writeEvent({
+              type: 'final_response',
+              text: fullText,
+              truncated: truncated || undefined,
+              sizeCapped: sizeCapped || undefined,
+            });
             chatHistory.push({ role: 'model', parts: [{ text: fullText }] });
-            return; // End of loop
+            // Auto retry logic if truncated and we still have budget
+            if (truncated && incompleteRetries < INCOMPLETE_RETRY_LIMIT) {
+              incompleteRetries++;
+              server.log.warn(
+                `[${sessionId}] Auto-retrying truncated final response (retry ${incompleteRetries}/${INCOMPLETE_RETRY_LIMIT}).`,
+              );
+              await logWorkflow(sessionId, 'auto_retry_truncated', {
+                attempt: incompleteRetries,
+                max: INCOMPLETE_RETRY_LIMIT,
+              });
+              // Add a synthetic user turn prompting continuation
+              chatHistory.push({ role: 'user', parts: [{ text: 'CONTINUE' }] });
+              stream = await openStreamWithRetry();
+              continue; // proceed to next loop iteration
+            }
+            // NEW: If we received absolutely no text on first loop (i === 0) and no tool calls,
+            // treat this as an abnormal empty response and attempt one forced continuation.
+            if (!fullText.trim() && i === 0 && incompleteRetries < INCOMPLETE_RETRY_LIMIT) {
+              incompleteRetries++;
+              server.log.warn(
+                `[${sessionId}] Empty initial response with no tool calls; forcing one auto-continue (attempt ${incompleteRetries}/${INCOMPLETE_RETRY_LIMIT}).`,
+              );
+              await logWorkflow(sessionId, 'auto_retry_empty_initial', {
+                attempt: incompleteRetries,
+                max: INCOMPLETE_RETRY_LIMIT,
+              });
+              chatHistory.push({
+                role: 'user',
+                parts: [
+                  {
+                    text: 'SYSTEM_HINT: Provide at least one tool call (get_allowed_files + read_file of BaseAnimate) then proceed with TDD steps.',
+                  },
+                ],
+              });
+              stream = await openStreamWithRetry();
+              continue;
+            }
+            return; // End of loop (done)
+          }
+
+          // If there are function calls but no plain text produced, send a model_note
+          if (!fullText.trim()) {
+            writeEvent({
+              type: 'model_note',
+              note: 'Model produced no direct text this turn; proceeding directly with tool call.',
+            });
           }
 
           const call = functionCalls[0]; // Assuming one tool call at a time for now
           server.log.info(`[${sessionId}] Executing tool call: ${call.name}`, call.args);
           writeEvent({ type: 'tool_call', name: call.name, args: call.args });
 
-          // --- Tool Execution Logic (remains the same) ---
-          let toolResponseContent;
-          // ... (Existing switch case for tool execution)
-          switch (call.name) {
-            case 'get_allowed_files':
-              toolResponseContent = await get_allowed_files(sessionId);
-              break;
-            case 'read_file':
-              toolResponseContent = await read_file(call.args.filepath, sessionId);
-              break;
-            case 'create_animation_file': {
-              const res = await write_file(
-                sessionId,
-                'animation',
-                call.args.className,
-                call.args.code,
-              );
-              toolResponseContent = res.message;
-              break;
-            }
-            case 'create_test_file': {
-              const res = await write_file(sessionId, 'test', call.args.className, call.args.code);
-              toolResponseContent = res.message;
-              break;
-            }
-            case 'update_animation_file': {
-              const res = await write_file(
-                sessionId,
-                'animation',
-                call.args.className,
-                call.args.code,
-              );
-              toolResponseContent = res.message;
-              break;
-            }
-            case 'update_test_file': {
-              const res = await write_file(sessionId, 'test', call.args.className, call.args.code);
-              toolResponseContent = res.message;
-              break;
-            }
-            case 'run_tests':
-              toolResponseContent = await run_tests(sessionId, call.args.className);
-              break;
-            case 'publish_files':
-              {
-                const res = await publish_files(sessionId, call.args.className);
-                toolResponseContent = res.success
-                  ? `Published ${call.args.className} successfully.`
-                  : `Failed to publish ${call.args.className}.`;
-                if (!res.success) {
-                  writeEvent({ type: 'error', message: `发布失败：${call.args.className}` });
-                }
+          const transientPattern =
+            /ENOENT|EACCES|EBUSY|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed|timeout|Too many open files/i;
+          const MAX_TOOL_RETRIES = 2;
+
+          const executeToolOnce = async (toolName: string, args: any): Promise<string> => {
+            switch (toolName) {
+              case 'get_allowed_files':
+                return await get_allowed_files(sessionId);
+              case 'read_file':
+                return await read_file(args.filepath, sessionId);
+              case 'create_animation_file': {
+                const res = await write_file(sessionId, 'animation', args.className, args.code);
+                return res.message;
               }
-              break;
-            default:
-              toolResponseContent = `Unknown tool: ${call.name}`;
+              case 'create_test_file': {
+                const res = await write_file(sessionId, 'test', args.className, args.code);
+                return res.message;
+              }
+              case 'update_animation_file': {
+                const res = await write_file(sessionId, 'animation', args.className, args.code);
+                return res.message;
+              }
+              case 'update_test_file': {
+                const res = await write_file(sessionId, 'test', args.className, args.code);
+                return res.message;
+              }
+              case 'run_tests':
+                return await run_tests(sessionId, args.className);
+              case 'publish_files': {
+                const res = await publish_files(sessionId, args.className);
+                if (!res.success) {
+                  writeEvent({ type: 'error', message: `发布失败：${args.className}` });
+                }
+                return res.success
+                  ? `Published ${args.className} successfully.`
+                  : `Failed to publish ${args.className}.`;
+              }
+              default:
+                return `Unknown tool: ${toolName}`;
+            }
+          };
+
+          const executeToolWithRetry = async (toolName: string, args: any): Promise<string> => {
+            let lastErr: any;
+            for (let attempt = 0; attempt <= MAX_TOOL_RETRIES; attempt++) {
+              try {
+                const out = await executeToolOnce(toolName, args);
+                if (attempt > 0) {
+                  writeEvent({
+                    type: 'tool_response',
+                    name: toolName,
+                    response: `Retry attempt ${attempt}: success.\n${out}`,
+                  });
+                }
+                return out;
+              } catch (e: any) {
+                lastErr = e;
+                const msg = e?.message || String(e);
+                const transient = transientPattern.test(msg);
+                if (transient && attempt < MAX_TOOL_RETRIES) {
+                  writeEvent({
+                    type: 'tool_retry',
+                    name: toolName,
+                    attempt: attempt + 1,
+                    max: MAX_TOOL_RETRIES + 1,
+                    message: msg,
+                  });
+                  const waitMs = Math.min(500 * Math.pow(2, attempt), 4000);
+                  await new Promise((r) => setTimeout(r, waitMs));
+                  continue;
+                }
+                // Non-transient or exhausted retries
+                // Build heuristic suggestions for user / model assistance
+                const suggestions: string[] = [];
+                if (/ENOENT/i.test(msg)) {
+                  suggestions.push(
+                    'File not found: verify the filepath passed to the tool matches an allowed file path.',
+                  );
+                }
+                if (/EACCES|permission denied/i.test(msg)) {
+                  suggestions.push(
+                    'Permission issue: ensure the file is writable and not locked by another process.',
+                  );
+                }
+                if (/ECONNRESET|fetch failed|network|ETIMEDOUT/i.test(msg)) {
+                  suggestions.push(
+                    'Transient network issue: retry the tool or wait a moment before re-running.',
+                  );
+                }
+                if (/TypeError/i.test(msg)) {
+                  suggestions.push(
+                    'TypeError: check that the generated code compiles and all imports resolve correctly.',
+                  );
+                }
+                if (/SyntaxError|Unexpected token/i.test(msg)) {
+                  suggestions.push(
+                    'Syntax error: re-run read_file on the affected source to inspect and correct malformed code.',
+                  );
+                }
+                if (toolName === 'run_tests' && /fail/i.test(msg)) {
+                  suggestions.push(
+                    'Tests failed: read failing assertion messages and update the animation or test file accordingly before retrying.',
+                  );
+                }
+                if (toolName === 'publish_files' && /missing/i.test(msg)) {
+                  suggestions.push(
+                    'Publish failed due to missing source: ensure create/update_animation_file was called successfully first.',
+                  );
+                }
+                if (toolName === 'publish_files' && /duplicate/i.test(msg)) {
+                  suggestions.push(
+                    'Publish skipped (duplicate): no code changes detected; proceed or modify code before re-publishing.',
+                  );
+                }
+                writeEvent({
+                  type: 'tool_error',
+                  name: toolName,
+                  attempt: attempt + 1,
+                  max: MAX_TOOL_RETRIES + 1,
+                  transient,
+                  message: msg,
+                  suggestions: suggestions.length ? suggestions : undefined,
+                });
+                if (!transient) {
+                  lastFailedTool.set(sessionId, { name: toolName, args, error: msg });
+                }
+                throw e;
+              }
+            }
+            throw lastErr;
+          };
+
+          let toolResponseContent: string;
+          try {
+            toolResponseContent = await executeToolWithRetry(call.name, call.args);
+          } catch (toolErr: any) {
+            // Abort this turn: push a minimal function response so model can react
+            const errMsg = toolErr?.message || String(toolErr);
+            chatHistory.push({
+              role: 'function',
+              parts: [
+                {
+                  functionResponse: {
+                    name: call.name,
+                    response: { error: errMsg },
+                  },
+                },
+              ],
+            });
+            await logWorkflow(sessionId, 'tool_error', { tool: call.name, message: errMsg });
+            // Continue loop to let model decide (it may attempt fix)
+            const contStart = Date.now();
+            await logWorkflow(sessionId, 'model_continue_start', { reason: 'tool_error' });
+            writeEvent({ type: 'heartbeat', phase: 'model_continue_start' });
+            stream = await openStreamWithRetry();
+            continue;
           }
-          // --- End Tool Execution ---
 
           writeEvent({ type: 'tool_response', name: call.name, response: toolResponseContent });
 
@@ -798,6 +1171,7 @@ async function main() {
               writeEvent({
                 type: 'error',
                 message: `Agent task succeeded, but failed to publish files for ${classNameToPublish}.`,
+                terminal: false,
               });
             }
           }
@@ -844,20 +1218,215 @@ async function main() {
           });
 
           if (i === MAX_STEPS - 1) {
-            writeEvent({ type: 'error', message: 'Workflow exceeded maximum steps (10).' });
+            // Inform client that the workflow halted due to max steps and allow explicit continuation
+            writeEvent({
+              type: 'workflow_halt',
+              reason: 'max_steps',
+              maxSteps: MAX_STEPS,
+              terminal: false,
+            });
             server.log.warn(`[${sessionId}] Workflow terminated due to exceeding max steps.`);
-            return;
+            // Keep SSE open for the client to decide next action (e.g., send CONTINUE via new turn)
+            continue;
           }
         }
       } catch (error: any) {
         server.log.error(error, 'Error processing chat stream');
-        writeEvent({ type: 'error', message: `An unexpected error occurred: ${error.message}` });
+        writeEvent({
+          type: 'error',
+          message: `An unexpected error occurred: ${error.message}`,
+          terminal: true,
+        });
+        shouldCloseSse = true;
       } finally {
         if (idleTimeout) clearTimeout(idleTimeout);
-        reply.raw.end(); // Ensure the SSE connection is closed
+        // Clear connection keepalive if set
+        try {
+          if (keepaliveTimer) clearInterval(keepaliveTimer);
+        } catch {}
+        if (shouldCloseSse) reply.raw.end();
       }
     };
     run();
+  });
+  // --- Outside of /api/chat route: endpoints for retrying last tool ---
+  // JSON variant (backwards compatibility)
+  server.post('/api/retry_last_tool', async (request, reply) => {
+    try {
+      const body = (request as any).body || {};
+      const { sessionId } = body;
+      if (!sessionId) return reply.code(400).send({ error: 'sessionId required' });
+      const failed = lastFailedTool.get(sessionId);
+      if (!failed) return reply.code(404).send({ error: 'No failed tool to retry' });
+      const chatHistory = sessions.get(sessionId);
+      if (!chatHistory) return reply.code(404).send({ error: 'Unknown session' });
+      const output = await (async () => {
+        switch (failed.name) {
+          case 'get_allowed_files':
+            return await get_allowed_files(sessionId);
+          case 'read_file':
+            return await read_file(failed.args.filepath, sessionId);
+          case 'create_animation_file': {
+            const res = await write_file(
+              sessionId,
+              'animation',
+              failed.args.className,
+              failed.args.code,
+            );
+            return res.message;
+          }
+          case 'create_test_file': {
+            const res = await write_file(
+              sessionId,
+              'test',
+              failed.args.className,
+              failed.args.code,
+            );
+            return res.message;
+          }
+          case 'update_animation_file': {
+            const res = await write_file(
+              sessionId,
+              'animation',
+              failed.args.className,
+              failed.args.code,
+            );
+            return res.message;
+          }
+          case 'update_test_file': {
+            const res = await write_file(
+              sessionId,
+              'test',
+              failed.args.className,
+              failed.args.code,
+            );
+            return res.message;
+          }
+          case 'run_tests':
+            return await run_tests(sessionId, failed.args.className);
+          case 'publish_files': {
+            const res = await publish_files(sessionId, failed.args.className);
+            return res.success
+              ? `Published ${failed.args.className} successfully.`
+              : `Failed to publish ${failed.args.className}.`;
+          }
+          default:
+            return `Unknown tool: ${failed.name}`;
+        }
+      })();
+      chatHistory.push({
+        role: 'model',
+        parts: [{ functionCall: { name: failed.name, args: failed.args } }],
+      });
+      chatHistory.push({
+        role: 'function',
+        parts: [{ functionResponse: { name: failed.name, response: { content: output } } }],
+      });
+      lastFailedTool.delete(sessionId);
+      return reply.send({ success: true, output });
+    } catch (e: any) {
+      return reply.code(500).send({ success: false, error: e?.message || String(e) });
+    }
+  });
+
+  // SSE streaming variant
+  server.get('/api/retry_last_tool_stream', async (request, reply) => {
+    reply.raw.setHeader('Content-Type', 'text/event-stream');
+    reply.raw.setHeader('Connection', 'keep-alive');
+    reply.raw.setHeader('Cache-Control', 'no-cache');
+    const writeEvent = (data: object) => reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
+    try {
+      const { sessionId } = request.query as any;
+      if (!sessionId) {
+        writeEvent({ type: 'error', message: 'sessionId required', terminal: true });
+        return reply.raw.end();
+      }
+      const failed = lastFailedTool.get(sessionId);
+      if (!failed) {
+        writeEvent({ type: 'error', message: 'No failed tool to retry', terminal: true });
+        return reply.raw.end();
+      }
+      const chatHistory = sessions.get(sessionId);
+      if (!chatHistory) {
+        writeEvent({ type: 'error', message: 'Unknown session', terminal: true });
+        return reply.raw.end();
+      }
+      writeEvent({ type: 'tool_call', name: failed.name, args: failed.args });
+      try {
+        const output = await (async () => {
+          switch (failed.name) {
+            case 'get_allowed_files':
+              return await get_allowed_files(sessionId);
+            case 'read_file':
+              return await read_file(failed.args.filepath, sessionId);
+            case 'create_animation_file': {
+              const res = await write_file(
+                sessionId,
+                'animation',
+                failed.args.className,
+                failed.args.code,
+              );
+              return res.message;
+            }
+            case 'create_test_file': {
+              const res = await write_file(
+                sessionId,
+                'test',
+                failed.args.className,
+                failed.args.code,
+              );
+              return res.message;
+            }
+            case 'update_animation_file': {
+              const res = await write_file(
+                sessionId,
+                'animation',
+                failed.args.className,
+                failed.args.code,
+              );
+              return res.message;
+            }
+            case 'update_test_file': {
+              const res = await write_file(
+                sessionId,
+                'test',
+                failed.args.className,
+                failed.args.code,
+              );
+              return res.message;
+            }
+            case 'run_tests':
+              return await run_tests(sessionId, failed.args.className);
+            case 'publish_files': {
+              const res = await publish_files(sessionId, failed.args.className);
+              return res.success
+                ? `Published ${failed.args.className} successfully.`
+                : `Failed to publish ${failed.args.className}.`;
+            }
+            default:
+              return `Unknown tool: ${failed.name}`;
+          }
+        })();
+        writeEvent({ type: 'tool_response', name: failed.name, response: output });
+        chatHistory.push({
+          role: 'model',
+          parts: [{ functionCall: { name: failed.name, args: failed.args } }],
+        });
+        chatHistory.push({
+          role: 'function',
+          parts: [{ functionResponse: { name: failed.name, response: { content: output } } }],
+        });
+        lastFailedTool.delete(sessionId);
+        writeEvent({ type: 'retry_complete' });
+      } catch (e: any) {
+        writeEvent({ type: 'tool_error', name: failed.name, message: e?.message || String(e) });
+      } finally {
+        reply.raw.end();
+      }
+    } catch (e: any) {
+      writeEvent({ type: 'error', message: e?.message || String(e), terminal: true });
+      reply.raw.end();
+    }
   });
   // Append workflow events to a session-scoped JSONL log
   async function logWorkflow(sessionId: string, event: string, payload: any) {
@@ -955,4 +1524,10 @@ async function main() {
   await server.listen({ port: PORT, host: HOST });
 }
 
-main();
+// Export functions for testing (publish_files duplicate detection)
+export { publish_files };
+
+if (import.meta.url === `file://${__filename}`) {
+  // Only auto-run main when executed directly, not when imported for tests
+  main();
+}

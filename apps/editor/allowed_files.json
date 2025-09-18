@@ -1,0 +1,96 @@
+{
+  "files": [
+    {
+      "path": "packages/pixiani-engine/src/core/AnimationManager.ts",
+      "description": "Manages the lifecycle of all animations."
+    },
+    {
+      "path": "packages/pixiani-engine/src/core/BaseAnimate.ts",
+      "description": "The base class for all animation implementations."
+    },
+    {
+      "path": "packages/pixiani-engine/src/core/BaseObject.ts",
+      "description": "A container object that can have animations attached to it."
+    },
+    {
+      "path": "packages/pixiani-engine/src/core/types.ts",
+      "description": "Contains all the core TypeScript types and interfaces for the engine."
+    },
+    {
+      "path": "packages/pixiani-engine/src/index.ts",
+      "description": "The main entry point for the pixiani-engine package."
+    },
+    {
+      "path": "packages/pixiani-anis/src/animations/ArcBounce3sAnimation.ts",
+      "description": "An animation that makes a sprite bounce in an arc."
+    },
+    {
+      "path": "packages/pixiani-anis/src/animations/BlackHoleSpiralAnimation.ts",
+      "description": "A mesh-based black-hole spiral that deforms the sprite using a PIXI.MeshPlane to create swirling vertex displacements."
+    },
+    {
+      "path": "packages/pixiani-anis/src/animations/CoinV2Animation.ts",
+      "description": "An animation for a spinning coin."
+    },
+    {
+      "path": "packages/pixiani-anis/src/animations/ComplexPopAnimation.ts",
+      "description": "A complex popping animation with multiple stages."
+    },
+    {
+      "path": "packages/pixiani-anis/src/animations/FadeAnimation.ts",
+      "description": "A simple fade-in and fade-out animation."
+    },
+    {
+      "path": "packages/pixiani-anis/src/animations/FlagWaveAnimation.ts",
+      "description": "A mesh-based waving effect that deforms the source sprite using a PIXI.MeshPlane (vertex grid)."
+    },
+    {
+      "path": "packages/pixiani-anis/src/animations/ParticleSpinAnimation.ts",
+      "description": "A particle-based effect that spawns many small sprites from the source texture; particles are simulated with gravity, collisions and fade-out. Uses a custom particle system (not a MeshPlane)."
+    },
+    {
+      "path": "packages/pixiani-anis/src/animations/ScaleAnimation.ts",
+      "description": "A simple scaling animation."
+    },
+    {
+      "path": "packages/pixiani-anis/src/animations/ScaleRotateScale.ts",
+      "description": "An animation that scales, rotates, and then scales again."
+    },
+    {
+      "path": "packages/pixiani-anis/src/animations/StairBounceAnimation.ts",
+      "description": "An animation that makes a sprite bounce down stairs."
+    },
+    {
+      "path": "packages/pixiani-anis/src/animations/VortexAnimation.ts",
+      "description": "A mesh-based vortex (black hole) effect that uses PIXI.MeshPlane to distort the source sprite's texture."
+    },
+    {
+      "path": "packages/pixiani-anis/src/index.ts",
+      "description": "The main entry point for the pixiani-anis package."
+    },
+    {
+      "path": "packages/pixiani-anis/tests/animations/ComplexPopAnimation.test.ts",
+      "description": "Tests for the ComplexPopAnimation."
+    },
+    {
+      "path": "packages/pixiani-anis/tests/animations/FadeAnimation.test.ts",
+      "description": "Tests for the FadeAnimation."
+    },
+    {
+      "path": "packages/pixiani-anis/tests/animations/FlagWaveAnimation.test.ts",
+      "description": "Tests for the FlagWaveAnimation."
+    },
+    {
+      "path": "packages/pixiani-anis/tests/animations/ParticleSpinAnimation.test.ts",
+      "description": "Tests for the ParticleSpinAnimation."
+    },
+    {
+      "path": "packages/pixiani-anis/tests/animations/ScaleAnimation.test.ts",
+      "description": "Tests for the ScaleAnimation."
+    },
+    {
+      "path": "packages/pixiani-anis/tests/animations/VortexAnimation.test.ts",
+      "description": "Tests for the VortexAnimation."
+    }
+  ]
+}
