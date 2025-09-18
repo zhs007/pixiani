@@ -43,6 +43,7 @@ export const App = () => {
   const lastPromptRef = useRef<string | null>(null);
   const [retryAvailable, setRetryAvailable] = useState(false);
   const [retryToolAvailable, setRetryToolAvailable] = useState(false);
+  const [continueAvailable, setContinueAvailable] = useState(false);
 
   const pixiAppRef = useRef<PIXI.Application | null>(null);
   const pixiContainerRef = useRef<HTMLDivElement>(null);
@@ -272,7 +273,7 @@ export const App = () => {
     setMessages((prev) => [...prev, { type: 'user', text: prompt }]);
     setIsThinking(true);
     setRetryAvailable(false);
-    const url = `/api/chat?prompt=${encodeURIComponent(prompt)}&sessionId=${sessionId || ''}`;
+  const url = `/api/chat?prompt=${encodeURIComponent(prompt)}&sessionId=${sessionId || ''}`;
     expectedCloseRef.current = false;
     const eventSource = new EventSource(url);
 
@@ -426,6 +427,7 @@ export const App = () => {
             setIsThinking(false);
             setRetryAvailable(false); // success -> disable retry
             setRetryToolAvailable(false);
+            setContinueAvailable(false);
             lastModelMsgRef.current = typeof geminiResponse === 'string' ? geminiResponse : '';
             const isTruncated = !!data.truncated || !!data.sizeCapped;
             // If truncated, show a subtle toast so the user knows continuation might occur
@@ -475,6 +477,33 @@ export const App = () => {
             break;
           }
 
+          case 'workflow_halt': {
+            // Server indicates a controlled halt (e.g., max steps). Offer Continue.
+            const reason = data.reason || 'halt';
+            setMessages((prev) => [
+              ...prev,
+              { type: 'gemini', text: `⚠️ 流程暂停：${reason === 'max_steps' ? '达到最大步骤数' : reason}` },
+            ]);
+            setContinueAvailable(true);
+            // Halt means model不再思考，启用输入与按钮
+            if (typingTimerRef.current) {
+              window.clearInterval(typingTimerRef.current);
+              typingTimerRef.current = null;
+            }
+            setIsThinking(false);
+            // If marked terminal, we expect the SSE to close; mark expected and close proactively
+            if (data.terminal) {
+              if (typingTimerRef.current) {
+                window.clearInterval(typingTimerRef.current);
+                typingTimerRef.current = null;
+              }
+              setIsThinking(false);
+              expectedCloseRef.current = true;
+              try { eventSource.close(); } catch {}
+            }
+            break;
+          }
+            break;
           case 'workflow_complete': {
             const { className, filePath } = data;
             setIsThinking(false);
@@ -504,6 +533,16 @@ export const App = () => {
             setToast(`请求出错：${data.message}`);
             if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
             toastTimerRef.current = window.setTimeout(() => setToast(null), 3000);
+            // If server marks this as terminal, treat it as an expected close to avoid onerror toast
+            if (data.terminal) {
+              if (typingTimerRef.current) {
+                window.clearInterval(typingTimerRef.current);
+                typingTimerRef.current = null;
+              }
+              setIsThinking(false);
+              expectedCloseRef.current = true;
+              try { eventSource.close(); } catch {}
+            }
             break;
 
           case 'tool_retry': {
@@ -561,6 +600,12 @@ export const App = () => {
         try { eventSource.close(); } catch {}
         return;
       }
+      // If we have a workflow_halt and are offering continue, treat as expected close
+      if (continueAvailable) {
+        setIsThinking(false);
+        try { eventSource.close(); } catch {}
+        return;
+      }
       // Enable retry if we had a prompt
       if (lastPromptRef.current) setRetryAvailable(true);
       if (geminiResponse && geminiResponse !== lastModelMsgRef.current) {
@@ -591,6 +636,12 @@ export const App = () => {
     if (lastPromptRef.current) {
       sendPrompt(lastPromptRef.current);
     }
+  };
+
+  const handleContinue = () => {
+    if (isThinking) return;
+    setContinueAvailable(false);
+    sendPrompt('CONTINUE');
   };
 
   const handleRetryTool = async () => {
@@ -750,6 +801,8 @@ export const App = () => {
         retryAvailable={retryAvailable}
         onRetryTool={handleRetryTool}
         retryToolAvailable={retryToolAvailable}
+        onContinue={handleContinue}
+        continueAvailable={continueAvailable}
       />
       <PreviewPanel
         pixiContainerRef={pixiContainerRef}

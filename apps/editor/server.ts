@@ -116,6 +116,8 @@ const ENABLE_STREAM_DELTA = (process.env.ENABLE_STREAM_DELTA ?? '1') === '1';
 const HEARTBEAT_INTERVAL_MS = Number(process.env.HEARTBEAT_INTERVAL_MS ?? 10000);
 const MAX_RESPONSE_CHARS = Number(process.env.MAX_RESPONSE_CHARS ?? 200000);
 const INCOMPLETE_RETRY_LIMIT = Number(process.env.INCOMPLETE_RETRY_LIMIT ?? 1);
+// Keep the SSE connection alive even when there's no active model stream (e.g., during long tool runs)
+const KEEPALIVE_INTERVAL_MS = Number(process.env.KEEPALIVE_INTERVAL_MS ?? 15000);
 // Whether to expose model internal reasoning/thought parts over SSE (debug only)
 const EXPOSE_MODEL_THOUGHTS = process.env.EXPOSE_MODEL_THOUGHTS === '1';
 // GENAI_NETWORK_RETRIES / GENAI_NETWORK_BACKOFF_MS are defined below with continuation controls but referenced here for clarity:
@@ -666,14 +668,23 @@ async function main() {
 
   // JSON endpoint for retry_last_tool moved outside /api/chat (kept for compatibility)
 
-    const writeEvent = (data: object) => {
-      reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
-    };
-
     // --- Main async logic ---
     const run = async () => {
       let sessionId: string;
       let idleTimeout: NodeJS.Timeout | undefined;
+      let shouldCloseSse = false; // whether to end SSE in finally
+      let keepaliveTimer: NodeJS.Timeout | null = null;
+
+      const writeEvent = (data: object) => {
+        try {
+          reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
+          resetIdleTimeout();
+        } catch (e: any) {
+          // If client disconnected, end quietly
+          request.log.warn({ err: e }, 'SSE write failed; closing connection');
+          try { reply.raw.end(); } catch {}
+        }
+      };
 
       const resetIdleTimeout = () => {
         if (idleTimeout) clearTimeout(idleTimeout);
@@ -682,12 +693,12 @@ async function main() {
             `Timeout: No data received for ${CONTINUE_TIMEOUT_MS}ms. Closing connection.`,
           );
           server.log.warn(`[${sessionId}] ${error.message}`);
-          writeEvent({ type: 'error', message: error.message });
+          writeEvent({ type: 'error', message: error.message, terminal: true });
           reply.raw.end();
         }, CONTINUE_TIMEOUT_MS);
       };
 
-      try {
+  try {
         const { prompt, sessionId: querySessionId } = request.query as {
           prompt: string;
           sessionId?: string;
@@ -704,6 +715,13 @@ async function main() {
           }
         }
         resetIdleTimeout(); // Start the timer as soon as the request is processed
+        // Start connection-level keepalive so proxies/browsers don't drop idle SSE
+        if (KEEPALIVE_INTERVAL_MS > 0) {
+          if (keepaliveTimer) clearInterval(keepaliveTimer);
+          keepaliveTimer = setInterval(() => {
+            writeEvent({ type: 'keepalive', ts: Date.now() });
+          }, KEEPALIVE_INTERVAL_MS);
+        }
 
         const chatHistory = sessions.get(sessionId)!;
         chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
@@ -753,12 +771,13 @@ async function main() {
         } catch (netErr: any) {
           const msg = `Network error: ${netErr?.message || netErr}`;
           server.log.error(`[${sessionId}] ${msg}`);
-          writeEvent({ type: 'error', message: msg });
-          // End SSE early since we cannot start streaming
-          return reply.raw.end();
+          writeEvent({ type: 'error', message: msg, terminal: true });
+          shouldCloseSse = true;
+          // Cannot start streaming; exit and let finally close SSE
+          return;
         }
 
-        const MAX_STEPS = 10;
+  const MAX_STEPS = Number(process.env.AGENT_MAX_STEPS ?? 10);
         let incompleteRetries = 0; // count of auto retries for truncated final responses
         for (let i = 0; i < MAX_STEPS; i++) {
           let aggregatedResponse: any = null;
@@ -1131,6 +1150,7 @@ async function main() {
               writeEvent({
                 type: 'error',
                 message: `Agent task succeeded, but failed to publish files for ${classNameToPublish}.`,
+                terminal: false,
               });
             }
           }
@@ -1177,17 +1197,22 @@ async function main() {
           });
 
           if (i === MAX_STEPS - 1) {
-            writeEvent({ type: 'error', message: 'Workflow exceeded maximum steps (10).' });
+            // Inform client that the workflow halted due to max steps and allow explicit continuation
+            writeEvent({ type: 'workflow_halt', reason: 'max_steps', maxSteps: MAX_STEPS, terminal: false });
             server.log.warn(`[${sessionId}] Workflow terminated due to exceeding max steps.`);
-            return;
+            // Keep SSE open for the client to decide next action (e.g., send CONTINUE via new turn)
+            continue;
           }
         }
       } catch (error: any) {
         server.log.error(error, 'Error processing chat stream');
-        writeEvent({ type: 'error', message: `An unexpected error occurred: ${error.message}` });
+        writeEvent({ type: 'error', message: `An unexpected error occurred: ${error.message}`, terminal: true });
+        shouldCloseSse = true;
       } finally {
         if (idleTimeout) clearTimeout(idleTimeout);
-        reply.raw.end(); // Ensure the SSE connection is closed
+        // Clear connection keepalive if set
+        try { if (keepaliveTimer) clearInterval(keepaliveTimer); } catch {}
+        if (shouldCloseSse) reply.raw.end();
       }
     };
     run();
@@ -1273,17 +1298,17 @@ async function main() {
     try {
       const { sessionId } = request.query as any;
       if (!sessionId) {
-        writeEvent({ type: 'error', message: 'sessionId required' });
+        writeEvent({ type: 'error', message: 'sessionId required', terminal: true });
         return reply.raw.end();
       }
       const failed = lastFailedTool.get(sessionId);
       if (!failed) {
-        writeEvent({ type: 'error', message: 'No failed tool to retry' });
+        writeEvent({ type: 'error', message: 'No failed tool to retry', terminal: true });
         return reply.raw.end();
       }
       const chatHistory = sessions.get(sessionId);
       if (!chatHistory) {
-        writeEvent({ type: 'error', message: 'Unknown session' });
+        writeEvent({ type: 'error', message: 'Unknown session', terminal: true });
         return reply.raw.end();
       }
       writeEvent({ type: 'tool_call', name: failed.name, args: failed.args });
@@ -1361,7 +1386,7 @@ async function main() {
         reply.raw.end();
       }
     } catch (e: any) {
-      writeEvent({ type: 'error', message: e?.message || String(e) });
+      writeEvent({ type: 'error', message: e?.message || String(e), terminal: true });
       reply.raw.end();
     }
   });

@@ -14,6 +14,8 @@ type ChatPanelProps = {
   retryAvailable?: boolean;
   onRetryTool?: () => void;
   retryToolAvailable?: boolean;
+  onContinue?: () => void;
+  continueAvailable?: boolean;
 };
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({
@@ -27,6 +29,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   retryAvailable = false,
   onRetryTool,
   retryToolAvailable = false,
+  onContinue,
+  continueAvailable = false,
 }) => (
   <div
     style={{
@@ -132,6 +136,15 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           style={{ padding: '10px 12px', marginLeft: '8px', cursor: 'pointer', background:'#ffa500' }}
         >
           Retry Tool
+        </button>
+      )}
+      {continueAvailable && (
+        <button
+          onClick={onContinue}
+          disabled={isThinking}
+          style={{ padding: '10px 12px', marginLeft: '8px', cursor: 'pointer', background:'#4caf50', color:'#fff' }}
+        >
+          继续
         </button>
       )}
     </div>
