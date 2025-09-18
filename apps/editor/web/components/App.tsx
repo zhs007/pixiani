@@ -273,7 +273,7 @@ export const App = () => {
     setMessages((prev) => [...prev, { type: 'user', text: prompt }]);
     setIsThinking(true);
     setRetryAvailable(false);
-  const url = `/api/chat?prompt=${encodeURIComponent(prompt)}&sessionId=${sessionId || ''}`;
+    const url = `/api/chat?prompt=${encodeURIComponent(prompt)}&sessionId=${sessionId || ''}`;
     expectedCloseRef.current = false;
     const eventSource = new EventSource(url);
 
@@ -328,11 +328,11 @@ export const App = () => {
                 typingRef.current = typingRef.current
                   ? { ...typingRef.current, text: newText }
                   : { index: 0, text: newText };
-                setMessages((prev) =>
-                  prev.map((m, i) =>
-                    i === (typingRef.current as { index: number }).index ? { ...m, text: newText } : m,
-                  ),
-                );
+                const idx = typingRef.current?.index;
+                setMessages((prev) => {
+                  if (idx === undefined) return prev;
+                  return prev.map((m, i) => (i === idx ? { ...m, text: newText } : m));
+                });
               }, 24);
             }
             break;
@@ -370,11 +370,11 @@ export const App = () => {
                   typingRef.current = typingRef.current
                     ? { ...typingRef.current, text: newText }
                     : { index: 0, text: newText };
-                  setMessages((prev) =>
-                    prev.map((m, i) =>
-                      i === (typingRef.current as { index: number }).index ? { ...m, text: newText } : m,
-                    ),
-                  );
+                  const idx = typingRef.current?.index;
+                  setMessages((prev) => {
+                    if (idx === undefined) return prev;
+                    return prev.map((m, i) => (i === idx ? { ...m, text: newText } : m));
+                  });
                 }, 20);
               }
             }
@@ -436,39 +436,26 @@ export const App = () => {
               if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
               toastTimerRef.current = window.setTimeout(() => setToast(null), 2500);
             }
+            // Finalize the streaming message to avoid duplication/truncation due to queued deltas.
             try {
-              const currentShown = typingRef.current?.text || '';
-              if (geminiResponse && geminiResponse !== currentShown) {
-                const remainder = geminiResponse.startsWith(currentShown)
-                  ? geminiResponse.slice(currentShown.length)
-                  : geminiResponse;
-                pendingTextRef.current += remainder;
-                if (!typingTimerRef.current && remainder) {
-                  typingTimerRef.current = window.setInterval(() => {
-                    const CHARS_PER_TICK = 6;
-                    if (!pendingTextRef.current) {
-                      if (typingTimerRef.current) {
-                        window.clearInterval(typingTimerRef.current);
-                        typingTimerRef.current = null;
-                      }
-                      return;
-                    }
-                    const chunk = pendingTextRef.current.slice(0, CHARS_PER_TICK);
-                    pendingTextRef.current = pendingTextRef.current.slice(CHARS_PER_TICK);
-                    const newText = (typingRef.current?.text || '') + chunk;
-                    typingRef.current = typingRef.current
-                      ? { ...typingRef.current, text: newText }
-                      : { index: 0, text: newText };
-                    setMessages((prev) =>
-                      prev.map((m, i) =>
-                        i === (typingRef.current as { index: number }).index
-                          ? { ...m, text: newText }
-                          : m,
-                      ),
-                    );
-                  }, 16);
-                }
+              // Stop typewriter if running
+              if (typingTimerRef.current) {
+                window.clearInterval(typingTimerRef.current);
+                typingTimerRef.current = null;
               }
+              // Replace the current streaming message text with the final text if it exists,
+              // otherwise append a new message.
+              if (typingRef.current) {
+                const idx = typingRef.current.index;
+                setMessages((prev) =>
+                  prev.map((m, i) => (i === idx ? { ...m, text: geminiResponse || '' } : m)),
+                );
+              } else if (geminiResponse) {
+                setMessages((prev) => [...prev, { type: 'gemini' as const, text: geminiResponse }]);
+              }
+              // Clear any pending queued characters and reset typing state
+              pendingTextRef.current = '';
+              typingRef.current = null;
             } catch {}
             expectedCloseRef.current = true;
             try {
@@ -477,32 +464,38 @@ export const App = () => {
             break;
           }
 
-          case 'workflow_halt': {
-            // Server indicates a controlled halt (e.g., max steps). Offer Continue.
-            const reason = data.reason || 'halt';
-            setMessages((prev) => [
-              ...prev,
-              { type: 'gemini', text: `⚠️ 流程暂停：${reason === 'max_steps' ? '达到最大步骤数' : reason}` },
-            ]);
-            setContinueAvailable(true);
-            // Halt means model不再思考，启用输入与按钮
-            if (typingTimerRef.current) {
-              window.clearInterval(typingTimerRef.current);
-              typingTimerRef.current = null;
-            }
-            setIsThinking(false);
-            // If marked terminal, we expect the SSE to close; mark expected and close proactively
-            if (data.terminal) {
+          case 'workflow_halt':
+            {
+              // Server indicates a controlled halt (e.g., max steps). Offer Continue.
+              const reason = data.reason || 'halt';
+              setMessages((prev) => [
+                ...prev,
+                {
+                  type: 'gemini',
+                  text: `⚠️ 流程暂停：${reason === 'max_steps' ? '达到最大步骤数' : reason}`,
+                },
+              ]);
+              setContinueAvailable(true);
+              // Halt means model不再思考，启用输入与按钮
               if (typingTimerRef.current) {
                 window.clearInterval(typingTimerRef.current);
                 typingTimerRef.current = null;
               }
               setIsThinking(false);
-              expectedCloseRef.current = true;
-              try { eventSource.close(); } catch {}
+              // If marked terminal, we expect the SSE to close; mark expected and close proactively
+              if (data.terminal) {
+                if (typingTimerRef.current) {
+                  window.clearInterval(typingTimerRef.current);
+                  typingTimerRef.current = null;
+                }
+                setIsThinking(false);
+                expectedCloseRef.current = true;
+                try {
+                  eventSource.close();
+                } catch {}
+              }
+              break;
             }
-            break;
-          }
             break;
           case 'workflow_complete': {
             const { className, filePath } = data;
@@ -541,7 +534,9 @@ export const App = () => {
               }
               setIsThinking(false);
               expectedCloseRef.current = true;
-              try { eventSource.close(); } catch {}
+              try {
+                eventSource.close();
+              } catch {}
             }
             break;
 
@@ -597,13 +592,17 @@ export const App = () => {
       }
       if (expectedCloseRef.current) {
         setIsThinking(false);
-        try { eventSource.close(); } catch {}
+        try {
+          eventSource.close();
+        } catch {}
         return;
       }
       // If we have a workflow_halt and are offering continue, treat as expected close
       if (continueAvailable) {
         setIsThinking(false);
-        try { eventSource.close(); } catch {}
+        try {
+          eventSource.close();
+        } catch {}
         return;
       }
       // Enable retry if we had a prompt
@@ -620,7 +619,9 @@ export const App = () => {
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
       toastTimerRef.current = window.setTimeout(() => setToast(null), 3000);
       setIsThinking(false);
-      try { eventSource.close(); } catch {}
+      try {
+        eventSource.close();
+      } catch {}
     };
   };
 
@@ -732,8 +733,16 @@ export const App = () => {
     }
     if (currentObjectRef.current) {
       const prev = currentObjectRef.current;
-      try { if (prev.parent) prev.parent.removeChild(prev); } catch {}
-      try { prev.destroy({ children: true }); } catch { try { prev.destroy(); } catch {} }
+      try {
+        if (prev.parent) prev.parent.removeChild(prev);
+      } catch {}
+      try {
+        prev.destroy({ children: true });
+      } catch {
+        try {
+          prev.destroy();
+        } catch {}
+      }
       currentObjectRef.current = null;
     }
     const animClass = availableAnimations.find((a) => a.animationName === selectedAnimationName);
@@ -741,20 +750,31 @@ export const App = () => {
     const textures = await Promise.all(spriteUrls.map((url) => PIXI.Assets.load(url)));
     const sprites = textures.map((texture) => new PIXI.Sprite(texture));
     const obj = new BaseObject();
-    sprites.forEach((s) => { s.anchor.set(0.5); obj.addChild(s); });
+    sprites.forEach((s) => {
+      s.anchor.set(0.5);
+      obj.addChild(s);
+    });
     obj.x = (app.renderer as any).width / 2;
     obj.y = (app.renderer as any).height / 2;
-    if (app.stage) app.stage.addChild(obj); else return;
+    if (app.stage) app.stage.addChild(obj);
+    else return;
     currentObjectRef.current = obj;
     const anim = animationManager.create(selectedAnimationName, obj, sprites);
-    if (anim) { anim.loop = loop; anim.speed = speed; anim.play(); }
+    if (anim) {
+      anim.loop = loop;
+      anim.speed = speed;
+      anim.play();
+    }
     setIsAssetModalOpen(false);
   };
 
   const handleDownload = async () => {
     const std = standardAnimationsRef.current;
     const isStandard = std.some((a) => a.animationName === selectedAnimationName);
-    if (isStandard) { alert('Cannot download standard, built-in animations.'); return; }
+    if (isStandard) {
+      alert('Cannot download standard, built-in animations.');
+      return;
+    }
     try {
       const res = await fetch(`/api/animation-code/${sessionId}/${selectedAnimationName}`);
       if (!res.ok) throw new Error(`Failed to fetch code: ${res.statusText}`);
@@ -762,8 +782,11 @@ export const App = () => {
       const blob = new Blob([code], { type: 'text/typescript' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = `${selectedAnimationName}.ts`;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      a.href = url;
+      a.download = `${selectedAnimationName}.ts`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Download failed:', error);

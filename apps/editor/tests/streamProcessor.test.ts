@@ -33,10 +33,7 @@ function processChunks(chunks: StreamEvent[], maxChars: number): ProcessResult {
 
 describe('processChunks', () => {
   it('collects text and marks complete when finishReason present', () => {
-    const events: StreamEvent[] = [
-      { text: 'Hello ' },
-      { text: 'World', finishReason: 'STOP' },
-    ];
+    const events: StreamEvent[] = [{ text: 'Hello ' }, { text: 'World', finishReason: 'STOP' }];
     const res = processChunks(events, 1000);
     expect(res.fullText).toBe('Hello World');
     expect(res.truncated).toBe(false);
@@ -53,11 +50,7 @@ describe('processChunks', () => {
   });
 
   it('marks truncated when no finishReason emitted', () => {
-    const events: StreamEvent[] = [
-      { text: 'Partial ' },
-      { text: 'Response ' },
-      { text: 'Only' },
-    ];
+    const events: StreamEvent[] = [{ text: 'Partial ' }, { text: 'Response ' }, { text: 'Only' }];
     const res = processChunks(events, 1000);
     expect(res.fullText).toBe('Partial Response Only');
     expect(res.truncated).toBe(true);

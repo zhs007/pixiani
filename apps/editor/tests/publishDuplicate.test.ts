@@ -21,13 +21,16 @@ describe('publish_files duplicate detection', () => {
   const sessionId = `sess_${crypto.randomUUID()}`;
   const className = 'HashDuplicateAnim';
   const code = 'export class HashDuplicateAnim {}';
-  const testCode = "import { describe,it,expect } from 'vitest'; describe('HashDuplicateAnim', ()=> it('exists', ()=> expect(1).toBe(1)));";
+  const testCode =
+    "import { describe,it,expect } from 'vitest'; describe('HashDuplicateAnim', ()=> it('exists', ()=> expect(1).toBe(1)));";
 
   it('skips second publish when content unchanged', async () => {
     await setupSession(sessionId, className, code, testCode);
     const first = await publish_files(sessionId, className);
     expect(first.success).toBe(true);
-    expect(first.mode === 'published' || first.mode === 'overwritten' || first.mode === 'kept').toBe(true);
+    expect(
+      first.mode === 'published' || first.mode === 'overwritten' || first.mode === 'kept',
+    ).toBe(true);
 
     // Recreate identical staging files
     await setupSession(sessionId, className, code, testCode);

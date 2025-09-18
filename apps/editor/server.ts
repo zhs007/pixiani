@@ -509,9 +509,7 @@ async function publish_files(
       try {
         const stagingSrc = await fs.readFile(stagingSrcPath, 'utf-8');
         const finalSrc = await fs.readFile(finalSrcPath, 'utf-8');
-        const stagingTest = haveStagingTest
-          ? await fs.readFile(stagingTestPath, 'utf-8')
-          : '';
+        const stagingTest = haveStagingTest ? await fs.readFile(stagingTestPath, 'utf-8') : '';
         const finalTest = haveFinalTest ? await fs.readFile(finalTestPath, 'utf-8') : '';
         const hash = (data: string) =>
           crypto.createHash('sha256').update(data, 'utf8').digest('hex');
@@ -588,7 +586,12 @@ async function publish_files(
     try {
       await logToolCall(sessionId, 'publish_files', { className }, { ...logPayload, mode });
     } catch {}
-    return { success: !duplicate || duplicate, finalPath: finalSrcPath, mode, skippedReason: logPayload.skippedReason };
+    return {
+      success: !duplicate || duplicate,
+      finalPath: finalSrcPath,
+      mode,
+      skippedReason: logPayload.skippedReason,
+    };
   } catch (e: any) {
     console.error(`[${sessionId}] Failed to publish files for ${className}: ${e.message}`);
     try {
@@ -666,7 +669,7 @@ async function main() {
     reply.raw.setHeader('Cache-Control', 'no-cache');
     reply.raw.setHeader('Access-Control-Allow-Origin', '*'); // Allow CORS for dev
 
-  // JSON endpoint for retry_last_tool moved outside /api/chat (kept for compatibility)
+    // JSON endpoint for retry_last_tool moved outside /api/chat (kept for compatibility)
 
     // --- Main async logic ---
     const run = async () => {
@@ -682,7 +685,9 @@ async function main() {
         } catch (e: any) {
           // If client disconnected, end quietly
           request.log.warn({ err: e }, 'SSE write failed; closing connection');
-          try { reply.raw.end(); } catch {}
+          try {
+            reply.raw.end();
+          } catch {}
         }
       };
 
@@ -698,7 +703,7 @@ async function main() {
         }, CONTINUE_TIMEOUT_MS);
       };
 
-  try {
+      try {
         const { prompt, sessionId: querySessionId } = request.query as {
           prompt: string;
           sessionId?: string;
@@ -731,37 +736,35 @@ async function main() {
             ? Math.max(1, GENAI_NETWORK_RETRIES + 1)
             : 1;
           let lastErr: any;
-            for (let attempt = 0; attempt < attempts; attempt++) {
-              try {
-                return await genAI.models.generateContentStream({
-                  model: GEMINI_MODEL,
-                  contents: chatHistory,
-                  config: {
-                    ...generationConfig,
-                    systemInstruction,
-                    safetySettings,
-                    tools,
-                  },
-                });
-              } catch (e: any) {
-                lastErr = e;
-                // Only retry on network/system transient errors. Heuristic: message contains 'fetch failed' or is a TypeError.
-                const msg = e?.message || String(e);
-                const transient = /fetch failed|ENOTFOUND|ECONNRESET|ETIMEDOUT|EAI_AGAIN/i.test(msg) ||
-                  e?.name === 'TypeError';
-                server.log.warn(
-                  `[${sessionId}] generateContentStream failed (attempt ${attempt + 1}/${attempts}): ${msg} (transient=${transient})`,
-                );
-                if (!transient) break; // don't keep retrying on non-network errors
-                if (attempt < attempts - 1) {
-                  const waitMs = Math.min(
-                    GENAI_NETWORK_BACKOFF_MS * Math.pow(2, attempt),
-                    6000,
-                  );
-                  await new Promise((r) => setTimeout(r, waitMs));
-                }
+          for (let attempt = 0; attempt < attempts; attempt++) {
+            try {
+              return await genAI.models.generateContentStream({
+                model: GEMINI_MODEL,
+                contents: chatHistory,
+                config: {
+                  ...generationConfig,
+                  systemInstruction,
+                  safetySettings,
+                  tools,
+                },
+              });
+            } catch (e: any) {
+              lastErr = e;
+              // Only retry on network/system transient errors. Heuristic: message contains 'fetch failed' or is a TypeError.
+              const msg = e?.message || String(e);
+              const transient =
+                /fetch failed|ENOTFOUND|ECONNRESET|ETIMEDOUT|EAI_AGAIN/i.test(msg) ||
+                e?.name === 'TypeError';
+              server.log.warn(
+                `[${sessionId}] generateContentStream failed (attempt ${attempt + 1}/${attempts}): ${msg} (transient=${transient})`,
+              );
+              if (!transient) break; // don't keep retrying on non-network errors
+              if (attempt < attempts - 1) {
+                const waitMs = Math.min(GENAI_NETWORK_BACKOFF_MS * Math.pow(2, attempt), 6000);
+                await new Promise((r) => setTimeout(r, waitMs));
               }
             }
+          }
           throw lastErr;
         };
 
@@ -777,7 +780,7 @@ async function main() {
           return;
         }
 
-  const MAX_STEPS = Number(process.env.AGENT_MAX_STEPS ?? 10);
+        const MAX_STEPS = Number(process.env.AGENT_MAX_STEPS ?? 10);
         let incompleteRetries = 0; // count of auto retries for truncated final responses
         for (let i = 0; i < MAX_STEPS; i++) {
           let aggregatedResponse: any = null;
@@ -852,7 +855,9 @@ async function main() {
                     }
                   }
                 } catch (e: any) {
-                  server.log.debug(`[${sessionId}] Failed to parse model thoughts: ${e?.message || e}`);
+                  server.log.debug(
+                    `[${sessionId}] Failed to parse model thoughts: ${e?.message || e}`,
+                  );
                 }
               }
 
@@ -950,8 +955,7 @@ async function main() {
                 role: 'user',
                 parts: [
                   {
-                    text:
-                      'SYSTEM_HINT: Provide at least one tool call (get_allowed_files + read_file of BaseAnimate) then proceed with TDD steps.',
+                    text: 'SYSTEM_HINT: Provide at least one tool call (get_allowed_files + read_file of BaseAnimate) then proceed with TDD steps.',
                   },
                 ],
               });
@@ -973,7 +977,8 @@ async function main() {
           server.log.info(`[${sessionId}] Executing tool call: ${call.name}`, call.args);
           writeEvent({ type: 'tool_call', name: call.name, args: call.args });
 
-          const transientPattern = /ENOENT|EACCES|EBUSY|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed|timeout|Too many open files/i;
+          const transientPattern =
+            /ENOENT|EACCES|EBUSY|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed|timeout|Too many open files/i;
           const MAX_TOOL_RETRIES = 2;
 
           const executeToolOnce = async (toolName: string, args: any): Promise<string> => {
@@ -1047,28 +1052,44 @@ async function main() {
                 // Build heuristic suggestions for user / model assistance
                 const suggestions: string[] = [];
                 if (/ENOENT/i.test(msg)) {
-                  suggestions.push('File not found: verify the filepath passed to the tool matches an allowed file path.');
+                  suggestions.push(
+                    'File not found: verify the filepath passed to the tool matches an allowed file path.',
+                  );
                 }
                 if (/EACCES|permission denied/i.test(msg)) {
-                  suggestions.push('Permission issue: ensure the file is writable and not locked by another process.');
+                  suggestions.push(
+                    'Permission issue: ensure the file is writable and not locked by another process.',
+                  );
                 }
                 if (/ECONNRESET|fetch failed|network|ETIMEDOUT/i.test(msg)) {
-                  suggestions.push('Transient network issue: retry the tool or wait a moment before re-running.');
+                  suggestions.push(
+                    'Transient network issue: retry the tool or wait a moment before re-running.',
+                  );
                 }
                 if (/TypeError/i.test(msg)) {
-                  suggestions.push('TypeError: check that the generated code compiles and all imports resolve correctly.');
+                  suggestions.push(
+                    'TypeError: check that the generated code compiles and all imports resolve correctly.',
+                  );
                 }
                 if (/SyntaxError|Unexpected token/i.test(msg)) {
-                  suggestions.push('Syntax error: re-run read_file on the affected source to inspect and correct malformed code.');
+                  suggestions.push(
+                    'Syntax error: re-run read_file on the affected source to inspect and correct malformed code.',
+                  );
                 }
                 if (toolName === 'run_tests' && /fail/i.test(msg)) {
-                  suggestions.push('Tests failed: read failing assertion messages and update the animation or test file accordingly before retrying.');
+                  suggestions.push(
+                    'Tests failed: read failing assertion messages and update the animation or test file accordingly before retrying.',
+                  );
                 }
                 if (toolName === 'publish_files' && /missing/i.test(msg)) {
-                  suggestions.push('Publish failed due to missing source: ensure create/update_animation_file was called successfully first.');
+                  suggestions.push(
+                    'Publish failed due to missing source: ensure create/update_animation_file was called successfully first.',
+                  );
                 }
                 if (toolName === 'publish_files' && /duplicate/i.test(msg)) {
-                  suggestions.push('Publish skipped (duplicate): no code changes detected; proceed or modify code before re-publishing.');
+                  suggestions.push(
+                    'Publish skipped (duplicate): no code changes detected; proceed or modify code before re-publishing.',
+                  );
                 }
                 writeEvent({
                   type: 'tool_error',
@@ -1198,7 +1219,12 @@ async function main() {
 
           if (i === MAX_STEPS - 1) {
             // Inform client that the workflow halted due to max steps and allow explicit continuation
-            writeEvent({ type: 'workflow_halt', reason: 'max_steps', maxSteps: MAX_STEPS, terminal: false });
+            writeEvent({
+              type: 'workflow_halt',
+              reason: 'max_steps',
+              maxSteps: MAX_STEPS,
+              terminal: false,
+            });
             server.log.warn(`[${sessionId}] Workflow terminated due to exceeding max steps.`);
             // Keep SSE open for the client to decide next action (e.g., send CONTINUE via new turn)
             continue;
@@ -1206,12 +1232,18 @@ async function main() {
         }
       } catch (error: any) {
         server.log.error(error, 'Error processing chat stream');
-        writeEvent({ type: 'error', message: `An unexpected error occurred: ${error.message}`, terminal: true });
+        writeEvent({
+          type: 'error',
+          message: `An unexpected error occurred: ${error.message}`,
+          terminal: true,
+        });
         shouldCloseSse = true;
       } finally {
         if (idleTimeout) clearTimeout(idleTimeout);
         // Clear connection keepalive if set
-        try { if (keepaliveTimer) clearInterval(keepaliveTimer); } catch {}
+        try {
+          if (keepaliveTimer) clearInterval(keepaliveTimer);
+        } catch {}
         if (shouldCloseSse) reply.raw.end();
       }
     };
@@ -1244,7 +1276,12 @@ async function main() {
             return res.message;
           }
           case 'create_test_file': {
-            const res = await write_file(sessionId, 'test', failed.args.className, failed.args.code);
+            const res = await write_file(
+              sessionId,
+              'test',
+              failed.args.className,
+              failed.args.code,
+            );
             return res.message;
           }
           case 'update_animation_file': {
@@ -1257,7 +1294,12 @@ async function main() {
             return res.message;
           }
           case 'update_test_file': {
-            const res = await write_file(sessionId, 'test', failed.args.className, failed.args.code);
+            const res = await write_file(
+              sessionId,
+              'test',
+              failed.args.className,
+              failed.args.code,
+            );
             return res.message;
           }
           case 'run_tests':
@@ -1278,9 +1320,7 @@ async function main() {
       });
       chatHistory.push({
         role: 'function',
-        parts: [
-          { functionResponse: { name: failed.name, response: { content: output } } },
-        ],
+        parts: [{ functionResponse: { name: failed.name, response: { content: output } } }],
       });
       lastFailedTool.delete(sessionId);
       return reply.send({ success: true, output });
@@ -1374,9 +1414,7 @@ async function main() {
         });
         chatHistory.push({
           role: 'function',
-          parts: [
-            { functionResponse: { name: failed.name, response: { content: output } } },
-          ],
+          parts: [{ functionResponse: { name: failed.name, response: { content: output } } }],
         });
         lastFailedTool.delete(sessionId);
         writeEvent({ type: 'retry_complete' });

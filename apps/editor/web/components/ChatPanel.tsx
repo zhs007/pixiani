@@ -2,7 +2,11 @@ import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-type ChatMessage = { type: 'user' | 'gemini'; text: string; variant?: 'error' | 'suggestion' | 'info' };
+type ChatMessage = {
+  type: 'user' | 'gemini';
+  text: string;
+  variant?: 'error' | 'suggestion' | 'info';
+};
 type ChatPanelProps = {
   messages: ChatMessage[];
   inputText: string;
@@ -124,7 +128,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         <button
           onClick={onRetry}
           disabled={isThinking}
-          style={{ padding: '10px 12px', marginLeft: '8px', cursor: 'pointer', background:'#ffcc00' }}
+          style={{
+            padding: '10px 12px',
+            marginLeft: '8px',
+            cursor: 'pointer',
+            background: '#ffcc00',
+          }}
         >
           Retry
         </button>
@@ -133,7 +142,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         <button
           onClick={onRetryTool}
           disabled={isThinking}
-          style={{ padding: '10px 12px', marginLeft: '8px', cursor: 'pointer', background:'#ffa500' }}
+          style={{
+            padding: '10px 12px',
+            marginLeft: '8px',
+            cursor: 'pointer',
+            background: '#ffa500',
+          }}
         >
           Retry Tool
         </button>
@@ -142,7 +156,13 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         <button
           onClick={onContinue}
           disabled={isThinking}
-          style={{ padding: '10px 12px', marginLeft: '8px', cursor: 'pointer', background:'#4caf50', color:'#fff' }}
+          style={{
+            padding: '10px 12px',
+            marginLeft: '8px',
+            cursor: 'pointer',
+            background: '#4caf50',
+            color: '#fff',
+          }}
         >
           继续
         </button>
