@@ -1,4 +1,15 @@
-import { Application, Assets, Container, Graphics, Sprite, Text, Texture, Ticker } from 'pixi.js';
+import {
+  Application,
+  Assets,
+  Container,
+  DisplayObject,
+  FillGradient,
+  Graphics,
+  Sprite,
+  Text,
+  Texture,
+  Ticker,
+} from 'pixi.js';
 import { randomFloat } from '../utils/random';
 
 export interface ComplexStageOptions {
@@ -65,10 +76,13 @@ const ICON_COLORS = [0x57d2ff, 0xff7cd9, 0x6aff8d, 0xffb84f, 0xff6b6b, 0x9f8bff]
 const RIPPLE_COLOR = 0xffcf73;
 const RIPPLE_ALPHA_START = 0.7;
 const RIPPLE_ALPHA_END = 0;
+const COIN_X_RANGE_FACTOR = 0.5;
+
+type BannerDisplay = DisplayObject & { scale: { set: (value: number) => void } };
 
 interface BannerVisual {
-  front: Sprite;
-  back?: Sprite | null;
+  front: BannerDisplay;
+  back?: BannerDisplay | null;
 }
 
 interface IconBurstPhaseConfig {
@@ -354,18 +368,62 @@ export class ComplexStage {
     this.sprites.set('demon', createSprite('demon'));
     this.sprites.set('coin', createSprite('coin'));
 
+    const createBannerFront = (label: string, radius: number, repetitions: number): Container => {
+      const container = new Container();
+
+      const innerGlow = new Graphics();
+      innerGlow.circle(0, 0, radius * 0.62);
+      innerGlow.stroke({ width: 6, color: 0xffd873, alpha: 0.35 });
+      container.addChild(innerGlow);
+
+      const repeatedLabel = Array.from({ length: repetitions }, () => label.toUpperCase()).join(' ');
+      const tokens = repeatedLabel.split('');
+      const total = tokens.length;
+      const letters: Text[] = [];
+      tokens.forEach((char, index) => {
+        const gradient = new FillGradient({ x0: 0, y0: -radius, x1: 0, y1: radius });
+        gradient.addColorStop(0, 0xfff9c7);
+        gradient.addColorStop(0.65, 0xffd27a);
+        gradient.addColorStop(1, 0xffa51f);
+
+        const text = new Text({
+          text: char,
+          style: {
+            fontFamily: 'Lilita One, system-ui',
+            fontSize: 72,
+            fontWeight: '700',
+            fill: gradient,
+            stroke: { color: 0x5f2300, width: 8, join: 'round' },
+            dropShadow: { color: 0x2e0f00, blur: 4, distance: 0, alpha: 0.6 },
+            letterSpacing: 2,
+          },
+        });
+        text.anchor.set(0.5);
+        const angle = (index / total) * Math.PI * 2 - Math.PI / 2;
+        text.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius);
+        text.rotation = angle + Math.PI / 2;
+        container.addChild(text);
+        letters.push(text);
+      });
+
+      container.cursor = 'pointer';
+      (container as unknown as { letters?: Text[] }).letters = letters;
+
+      return container;
+    };
+
     const phaseVisuals: PhaseVisualMap = {
       bigwin: {
         back: createSprite('bigwinBack'),
-        front: createSprite('bigwinFront'),
+        front: createBannerFront('BIG WIN! YUMMI!', 382, 3),
       },
       superwin: {
         back: createSprite('superwinBack'),
-        front: createSprite('superwinFront'),
+        front: createBannerFront('SUPER WIN! TASTY!', 405, 3),
       },
       megawin: {
         back: createSprite('megawinBack'),
-        front: createSprite('megawinFront'),
+        front: createBannerFront('MEGA WIN! DELICIOUS!', 428, 3),
       },
     };
 
@@ -645,6 +703,9 @@ interface CoinParticle {
   state: 'falling' | 'fading';
   fadeTimer: number;
   fadeDuration: number;
+  flipTimer: number;
+  flipSpeed: number;
+  mode: 'flip' | 'spin';
 }
 
 interface CoinEmitterOptions {
@@ -696,6 +757,9 @@ interface BannerState {
   frontTimer: number;
   frontScale: number;
   fadeStartScale: number;
+  pulseTimer: number;
+  pulseIndex: number;
+  pulseLetters: Text[];
 }
 
 class BannerAnimator {
@@ -743,11 +807,31 @@ class BannerAnimator {
         frontTimer: 0,
         frontScale: config.frontStartScale,
         fadeStartScale: config.frontStartScale,
+        pulseTimer: 0,
+        pulseIndex: 0,
+        pulseLetters: this.extractLetters(this.visuals[phaseKey].front),
       };
 
       this.states[phaseKey] = state;
       this.resetState(state);
     });
+  }
+
+  private extractLetters(display: BannerDisplay): Text[] {
+    if ('letters' in display && Array.isArray((display as { letters?: unknown }).letters)) {
+      return ((display as { letters?: Text[] }).letters ?? []).map((text) => text);
+    }
+    const letters: Text[] = [];
+    if (display instanceof Container) {
+      display.children.forEach((child) => {
+        if (child instanceof Text) {
+          letters.push(child);
+        } else if (child instanceof Container) {
+          letters.push(...this.extractLetters(child as BannerDisplay));
+        }
+      });
+    }
+    return letters;
   }
 
   setPhase(phase: StagePhase): void {
@@ -794,6 +878,13 @@ class BannerAnimator {
       }
       this.updateBack(state, dt);
       this.updateFront(state, dt);
+    });
+
+    (Object.values(this.states) as BannerState[]).forEach((state) => {
+      if (!state) {
+        return;
+      }
+      this.updatePulse(state, dt);
     });
   }
 
@@ -856,10 +947,13 @@ class BannerAnimator {
     state.frontTimer = 0;
     state.frontScale = config.frontStartScale;
     state.fadeStartScale = config.frontStartScale;
+    state.pulseTimer = 0;
+    state.pulseIndex = 0;
     visual.front.visible = false;
     visual.front.alpha = 0;
     visual.front.rotation = 0;
     visual.front.scale.set(config.frontStartScale);
+    state.pulseLetters.forEach((letter) => letter.scale.set(1));
   }
 
   private startFadeOut(state: BannerState): void {
@@ -881,10 +975,12 @@ class BannerAnimator {
     state.frontStage = 'fade';
     state.frontTimer = 0;
     state.fadeStartScale = visual.front.scale.x;
+    state.pulseTimer = 0;
     visual.front.visible = true;
     if (visual.front.alpha <= 0) {
       visual.front.alpha = 1;
     }
+    state.pulseLetters.forEach((letter) => letter.scale.set(1));
   }
 
   private updateBack(state: BannerState, dt: number): void {
@@ -1005,6 +1101,50 @@ class BannerAnimator {
       default:
         break;
     }
+  }
+
+  private updatePulse(state: BannerState, dt: number): void {
+    if (!state.active || state.pulseLetters.length === 0) {
+      return;
+    }
+
+    const pulseDuration = 0.09;
+    const holdDuration = 0.04;
+    const cycleDuration = pulseDuration * 2 + holdDuration;
+
+    state.pulseTimer += dt;
+
+    if (state.pulseTimer >= cycleDuration) {
+      this.resetLetterScale(state.pulseLetters[state.pulseIndex]);
+      state.pulseTimer -= cycleDuration;
+      state.pulseIndex = (state.pulseIndex + 1) % state.pulseLetters.length;
+    }
+
+    const letter = state.pulseLetters[state.pulseIndex];
+    if (!letter) {
+      return;
+    }
+
+    const localTime = state.pulseTimer;
+
+    if (localTime <= pulseDuration) {
+      const t = localTime / pulseDuration;
+      const scale = 1 + t * 3;
+      letter.scale.set(scale);
+    } else if (localTime <= pulseDuration + holdDuration) {
+      letter.scale.set(4);
+    } else {
+      const t = (localTime - pulseDuration - holdDuration) / pulseDuration;
+      const scale = 4 - t * 3;
+      letter.scale.set(scale);
+    }
+  }
+
+  private resetLetterScale(letter: Text | undefined): void {
+    if (!letter) {
+      return;
+    }
+    letter.scale.set(1);
   }
 }
 
@@ -1412,7 +1552,16 @@ class CoinEmitter {
       coin.velocityY += coin.gravity * dt;
       coin.sprite.x += coin.velocityX * dt;
       coin.sprite.y += coin.velocityY * dt;
-      coin.sprite.rotation += coin.rotationSpeed * dt;
+
+      if (coin.mode === 'flip') {
+        coin.flipTimer += dt * coin.flipSpeed;
+        coin.sprite.scale.x = Math.sin(coin.flipTimer);
+        coin.sprite.scale.y = 1;
+        coin.sprite.rotation = 0;
+      } else {
+        coin.sprite.scale.set(1, 1);
+        coin.sprite.rotation += coin.rotationSpeed * dt;
+      }
 
       if (coin.state !== 'fading' && coin.velocityY > 0 && coin.sprite.y >= targetY) {
         coin.sprite.y = targetY;
@@ -1473,17 +1622,20 @@ class CoinEmitter {
     sprite.anchor.set(0.5);
     sprite.scale.set(1);
     sprite.position.set(spawnX, this.getSpawnY());
-    sprite.rotation = randomFloat(-Math.PI, Math.PI);
     sprite.alpha = 1;
     sprite.blendMode = 'add';
 
+    const mode: CoinParticle['mode'] = Math.random() < 0.5 ? 'flip' : 'spin';
+    const rotationSpeed = mode === 'spin' ? randomFloat(-6, 6) : 0;
+    sprite.rotation = mode === 'spin' ? randomFloat(-Math.PI, Math.PI) : 0;
+
     const coin: CoinParticle = {
       sprite,
-      velocityX: randomFloat(-40, 40),
+      velocityX: randomFloat(-40, 40) * COIN_X_RANGE_FACTOR,
       velocityY: randomFloat(20, 80),
       gravity: randomFloat(900, 1100),
-      horizontalSpeed: randomFloat(220, 320),
-      rotationSpeed: randomFloat(-6, 6),
+      horizontalSpeed: randomFloat(220, 320) * COIN_X_RANGE_FACTOR,
+      rotationSpeed,
       direction,
       bounces: 0,
       maxBounces: 3,
@@ -1492,10 +1644,19 @@ class CoinEmitter {
       state: 'falling',
       fadeTimer: 0,
       fadeDuration: randomFloat(0.6, 1.1),
+      flipTimer: randomFloat(0, Math.PI * 2),
+      flipSpeed: mode === 'flip' ? randomFloat(8, 12) : 0,
+      mode,
     };
 
     this.coins.push(coin);
     this.container.addChild(sprite);
+    if (mode === 'flip') {
+      sprite.scale.x = Math.sin(coin.flipTimer);
+      sprite.scale.y = 1;
+    } else {
+      sprite.scale.set(1, 1);
+    }
   }
 
   private removeCoinAt(index: number): void {
@@ -1509,7 +1670,7 @@ class CoinEmitter {
   }
 
   private getSpawnX(): number {
-    const spread = this.coinTexture.width * 5;
+    const spread = this.coinTexture.width * 5 * COIN_X_RANGE_FACTOR;
     return randomFloat(-spread / 2, spread / 2);
   }
 
