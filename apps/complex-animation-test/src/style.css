@@ -1,6 +1,10 @@
 :root {
   color-scheme: dark;
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-family:
+    'Segoe UI',
+    system-ui,
+    -apple-system,
+    sans-serif;
   background: radial-gradient(circle at center, #1d2750 0%, #050913 60%, #030308 100%);
 }
 

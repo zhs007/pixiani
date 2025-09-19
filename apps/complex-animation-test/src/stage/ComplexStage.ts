@@ -15,7 +15,14 @@ interface Bounds {
 
 type CoreSpriteKey = 'baseBack' | 'outerGlow' | 'outerRing' | 'rim' | 'demon' | 'coin';
 
-const ICON_KEYS = ['iconDrink', 'iconFries', 'iconBurger', 'iconPizza', 'iconCup', 'iconShake'] as const;
+const ICON_KEYS = [
+  'iconDrink',
+  'iconFries',
+  'iconBurger',
+  'iconPizza',
+  'iconCup',
+  'iconShake',
+] as const;
 type IconKey = (typeof ICON_KEYS)[number];
 type ManifestKey = CoreSpriteKey | IconKey;
 
@@ -31,7 +38,7 @@ const manifest: Record<ManifestKey, string> = {
   iconBurger: new URL('../assets/item_04.png', import.meta.url).href,
   iconPizza: new URL('../assets/item_05.png', import.meta.url).href,
   iconCup: new URL('../assets/item_01.png', import.meta.url).href,
-  iconShake: new URL('../assets/item_02.png', import.meta.url).href
+  iconShake: new URL('../assets/item_02.png', import.meta.url).href,
 };
 
 export class ComplexStage {
@@ -57,7 +64,7 @@ export class ComplexStage {
     this.uiLayer = new Container();
     this.bounds = {
       width: options.initialWidth ?? Math.min(window.innerWidth, 1280),
-      height: options.initialHeight ?? Math.min(window.innerHeight, 720)
+      height: options.initialHeight ?? Math.min(window.innerHeight, 720),
     };
   }
 
@@ -68,7 +75,7 @@ export class ComplexStage {
       height: this.bounds.height,
       antialias: true,
       autoDensity: true,
-      resolution: this.options.pixelRatio ?? Math.min(window.devicePixelRatio, 2)
+      resolution: this.options.pixelRatio ?? Math.min(window.devicePixelRatio, 2),
     });
 
     this.app.stage.sortableChildren = true;
@@ -120,8 +127,8 @@ export class ComplexStage {
         Object.entries(manifest).map(async ([alias, src]) => {
           const texture = await Assets.load(src);
           return [alias, texture] as const;
-        })
-      )
+        }),
+      ),
     ) as Record<ManifestKey, Sprite['texture']>;
 
     const createSprite = (key: ManifestKey): Sprite => {
@@ -220,9 +227,9 @@ export class ComplexStage {
         dropShadow: {
           color: 0xffa94c,
           blur: 8,
-          distance: 0
-        }
-      }
+          distance: 0,
+        },
+      },
     });
     amount.anchor.set(0.5);
     amount.zIndex = 30;

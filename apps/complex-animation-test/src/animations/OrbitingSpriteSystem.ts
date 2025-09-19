@@ -55,7 +55,7 @@ export class OrbitingSpriteSystem {
         phaseOffset: randomFloat(0, Math.PI * 2),
         wobbleFrequency: randomFloat(0.2, 1.2),
         driftAmplitude: randomFloat(6, 28),
-        driftFrequency: randomFloat(0.6, 1.5)
+        driftFrequency: randomFloat(0.6, 1.5),
       } satisfies OrbitingSpriteProps;
     });
   }

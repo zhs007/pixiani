@@ -4,9 +4,9 @@ export default defineConfig({
   root: '.',
   server: {
     open: true,
-    port: 5174
+    port: 5174,
   },
   preview: {
-    port: 4174
-  }
+    port: 4174,
+  },
 });

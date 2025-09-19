@@ -13,7 +13,7 @@ async function bootstrap(): Promise<void> {
     pixelRatio: Math.min(window.devicePixelRatio, 2),
     initialWidth: Math.min(window.innerWidth, 1280),
     initialHeight: Math.min(window.innerHeight, 720),
-    showDebugOverlay: true
+    showDebugOverlay: true,
   });
 
   await stage.init();

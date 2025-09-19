@@ -87,7 +87,7 @@ export class TrailField {
       frequency: randomFloat(0.6, 1.2),
       offset: randomFloat(0, Math.PI * 2),
       stretch: randomFloat(6, 10),
-      baseX: randomFloat(this.width * 0.2, this.width * 0.8)
+      baseX: randomFloat(this.width * 0.2, this.width * 0.8),
     };
 
     this.view.addChild(sprite);
