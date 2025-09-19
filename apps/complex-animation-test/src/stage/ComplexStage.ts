@@ -2,7 +2,6 @@ import {
   Application,
   Assets,
   Container,
-  DisplayObject,
   FillGradient,
   Graphics,
   Sprite,
@@ -78,7 +77,7 @@ const RIPPLE_ALPHA_START = 0.7;
 const RIPPLE_ALPHA_END = 0;
 const COIN_X_RANGE_FACTOR = 0.5;
 
-type BannerDisplay = DisplayObject & { scale: { set: (value: number) => void } };
+type BannerDisplay = Container & { scale: { set: (value: number) => void } };
 
 interface BannerVisual {
   front: BannerDisplay;
@@ -383,7 +382,7 @@ export class ComplexStage {
       const total = tokens.length;
       const letters: Text[] = [];
       tokens.forEach((char, index) => {
-        const gradient = new FillGradient({ x0: 0, y0: -radius, x1: 0, y1: radius });
+  const gradient = new FillGradient(0, -radius, 0, radius);
         gradient.addColorStop(0, 0xfff9c7);
         gradient.addColorStop(0.65, 0xffd27a);
         gradient.addColorStop(1, 0xffa51f);
@@ -895,7 +894,7 @@ class BannerAnimator {
   }
 
   private resolveConfig(phase: PhaseWithBanner): RequiredBannerConfig {
-    const overrides = this.configs[phase] ?? {};
+  const overrides = (this.configs[phase] ?? {}) as Partial<BannerPhaseConfig>;
     return {
       ...BannerAnimator.DEFAULT_CONFIG,
       ...overrides,
