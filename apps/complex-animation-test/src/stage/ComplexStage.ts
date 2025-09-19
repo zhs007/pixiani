@@ -9,6 +9,11 @@ import {
   Texture,
   Ticker,
 } from 'pixi.js';
+import { CoinEmitter } from '../animations/CoinEmitter';
+import {
+  IconBurstEmitter,
+  type IconBurstEmitterConfig,
+} from '../animations/IconBurstEmitter';
 import { randomFloat } from '../utils/random';
 
 export interface ComplexStageOptions {
@@ -70,29 +75,16 @@ const manifest: Record<ManifestKey, string> = {
 
 const DEFAULT_TARGET_AMOUNT = 150;
 const MAX_ACTIVE_COINS = 100;
-const BOUNCE_DECAY = [1, 0.55, 0.28, 0.16];
 const ICON_COLORS = [0x57d2ff, 0xff7cd9, 0x6aff8d, 0xffb84f, 0xff6b6b, 0x9f8bff];
 const RIPPLE_COLOR = 0xffcf73;
 const RIPPLE_ALPHA_START = 0.7;
 const RIPPLE_ALPHA_END = 0;
-const COIN_X_RANGE_FACTOR = 0.5;
 
 type BannerDisplay = Container & { scale: { set: (value: number) => void } };
 
 interface BannerVisual {
   front: BannerDisplay;
   back?: BannerDisplay | null;
-}
-
-interface IconBurstPhaseConfig {
-  burstCount: number;
-  burstIntervalRange: [number, number];
-  speedRange: [number, number];
-  startScale: number;
-  peakScale: number;
-  finalScale: number;
-  lifetimeMultiplier: number;
-  spinSpeedRange: [number, number];
 }
 
 interface PhaseSettings {
@@ -106,7 +98,7 @@ interface PhaseSettings {
   };
   showIcons: boolean;
   bannerKey?: PhaseWithBanner;
-  iconConfig?: IconBurstPhaseConfig;
+  iconConfig?: IconBurstEmitterConfig;
   bannerConfig?: BannerPhaseConfig;
   rippleConfig?: RipplePhaseConfig;
 }
@@ -688,41 +680,6 @@ export class ComplexStage {
   }
 }
 
-type CoinDirection = 1 | -1;
-
-interface CoinParticle {
-  sprite: Sprite;
-  velocityX: number;
-  velocityY: number;
-  gravity: number;
-  horizontalSpeed: number;
-  rotationSpeed: number;
-  direction: CoinDirection;
-  bounces: number;
-  readonly maxBounces: number;
-  baseBounceStrength: number;
-  pendingFade: boolean;
-  state: 'falling' | 'fading';
-  fadeTimer: number;
-  fadeDuration: number;
-  flipTimer: number;
-  flipSpeed: number;
-  mode: 'flip' | 'spin';
-}
-
-interface CoinEmitterOptions {
-  container: Container;
-  coinTexture: Texture;
-  demonSprite: Sprite;
-  maxCoins: number;
-  bounds: Bounds;
-}
-
-interface CoinEmitterConfig {
-  maxCoins?: number;
-  spawnIntervalRange?: [number, number];
-}
-
 interface BannerAnimatorOptions {
   visuals: PhaseVisualMap;
   configs: Partial<Record<PhaseWithBanner, BannerPhaseConfig>>;
@@ -1300,395 +1257,5 @@ class RippleEmitter {
   private clearRipples(): void {
     this.ripples.forEach((ripple) => ripple.graphic.destroy());
     this.ripples.length = 0;
-  }
-}
-
-interface IconBurstEmitterOptions {
-  container: Container;
-  textures: Texture[];
-  colorPalette: number[];
-}
-
-interface IconBurstActivationConfig extends IconBurstPhaseConfig {
-  radius: number;
-}
-
-interface IconParticle {
-  sprite: Sprite;
-  velocityX: number;
-  velocityY: number;
-  rotationSpeed: number;
-  life: number;
-  peakTime: number;
-  totalLife: number;
-  startScale: number;
-  peakScale: number;
-  finalScale: number;
-}
-
-class IconBurstEmitter {
-  private readonly container: Container;
-
-  private readonly textures: Texture[];
-
-  private readonly colorPalette: number[];
-
-  private readonly particles: IconParticle[] = [];
-
-  private isActive = false;
-
-  private config: IconBurstActivationConfig | null = null;
-
-  private radius = 200;
-
-  private spawnTimer = 0;
-
-  private nextBurstIn = 0;
-
-  constructor({ container, textures, colorPalette }: IconBurstEmitterOptions) {
-    this.container = container;
-    this.textures = textures;
-    this.colorPalette = colorPalette;
-  }
-
-  activate(config: IconBurstActivationConfig): void {
-    this.clearParticles();
-    this.config = config;
-    this.isActive = true;
-    this.radius = config.radius;
-    this.spawnTimer = 0;
-    this.scheduleNextBurst();
-    this.spawnBurst();
-    this.scheduleNextBurst();
-  }
-
-  deactivate(): void {
-    this.isActive = false;
-    this.config = null;
-    this.spawnTimer = 0;
-    this.nextBurstIn = 0;
-    this.clearParticles();
-  }
-
-  setRadius(radius: number): void {
-    this.radius = radius;
-  }
-
-  update(dt: number): void {
-    const hasConfig = Boolean(this.config);
-    if (this.isActive && hasConfig) {
-      this.spawnTimer += dt;
-      while (this.spawnTimer >= this.nextBurstIn) {
-        this.spawnTimer -= this.nextBurstIn;
-        this.spawnBurst();
-        this.scheduleNextBurst();
-      }
-    }
-
-    for (let index = this.particles.length - 1; index >= 0; index -= 1) {
-      const particle = this.particles[index];
-      particle.life += dt;
-
-      particle.sprite.x += particle.velocityX * dt;
-      particle.sprite.y += particle.velocityY * dt;
-      particle.sprite.rotation += particle.rotationSpeed * dt;
-
-      const { life, peakTime, totalLife, startScale, peakScale, finalScale } = particle;
-
-      if (life <= peakTime) {
-        const t = Math.min(life / peakTime, 1);
-        const scale = startScale + (peakScale - startScale) * t;
-        particle.sprite.scale.set(scale);
-      } else {
-        const postLife = Math.min(
-          (life - peakTime) / Math.max(totalLife - peakTime, Number.EPSILON),
-          1,
-        );
-        const scale = peakScale + (finalScale - peakScale) * postLife;
-        particle.sprite.scale.set(scale);
-        particle.sprite.alpha = Math.max(0, 1 - postLife);
-      }
-
-      if (life >= totalLife) {
-        this.removeParticleAt(index);
-      }
-    }
-
-    this.container.visible = this.isActive || this.particles.length > 0;
-  }
-
-  private spawnBurst(): void {
-    if (!this.config || this.textures.length === 0) {
-      return;
-    }
-
-    const {
-      burstCount,
-      speedRange,
-      startScale,
-      peakScale,
-      finalScale,
-      lifetimeMultiplier,
-      spinSpeedRange,
-    } = this.config;
-
-    const angleStep = (Math.PI * 2) / burstCount;
-
-    for (let i = 0; i < burstCount; i += 1) {
-      const angleOffset = randomFloat(-angleStep * 0.25, angleStep * 0.25);
-      const angle = angleStep * i + angleOffset;
-      const directionX = Math.cos(angle);
-      const directionY = Math.sin(angle);
-      const speed = randomFloat(speedRange[0], speedRange[1]);
-      const peakTime = this.radius / Math.max(speed, Number.EPSILON);
-      const totalLife = peakTime * lifetimeMultiplier;
-
-      const texture = this.textures[Math.floor(Math.random() * this.textures.length)];
-      const sprite = new Sprite(texture);
-      sprite.anchor.set(0.5);
-      sprite.position.set(0, 0);
-      sprite.scale.set(startScale);
-      sprite.blendMode = 'add';
-      sprite.alpha = 1;
-      sprite.tint =
-        this.colorPalette[Math.floor(Math.random() * this.colorPalette.length)] ?? 0xffffff;
-
-      const rotationSpeed = randomFloat(spinSpeedRange[0], spinSpeedRange[1]);
-
-      const particle: IconParticle = {
-        sprite,
-        velocityX: directionX * speed,
-        velocityY: directionY * speed,
-        rotationSpeed,
-        life: 0,
-        peakTime,
-        totalLife,
-        startScale,
-        peakScale,
-        finalScale,
-      };
-
-      this.particles.push(particle);
-      this.container.addChild(sprite);
-    }
-  }
-
-  private scheduleNextBurst(): void {
-    if (!this.config) {
-      this.nextBurstIn = 0;
-      return;
-    }
-    const [min, max] = this.config.burstIntervalRange;
-    this.nextBurstIn = randomFloat(min, max);
-  }
-
-  private removeParticleAt(index: number): void {
-    const [particle] = this.particles.splice(index, 1);
-    particle.sprite.destroy();
-  }
-
-  private clearParticles(): void {
-    this.particles.forEach((particle) => particle.sprite.destroy());
-    this.particles.length = 0;
-  }
-}
-
-class CoinEmitter {
-  private readonly container: Container;
-
-  private readonly coinTexture: Texture;
-
-  private readonly demonSprite: Sprite;
-
-  private readonly coins: CoinParticle[] = [];
-
-  private maxCoins: number;
-
-  private readonly maxCoinsCap: number;
-
-  private bounds: Bounds;
-
-  private spawnTimer = 0;
-
-  private nextSpawnIn = 0;
-
-  private spawnIntervalRange: [number, number] = [0.04, 0.12];
-
-  constructor({ container, coinTexture, demonSprite, maxCoins, bounds }: CoinEmitterOptions) {
-    this.container = container;
-    this.coinTexture = coinTexture;
-    this.demonSprite = demonSprite;
-    this.maxCoinsCap = maxCoins;
-    this.maxCoins = maxCoins;
-    this.bounds = bounds;
-    this.scheduleNextSpawn();
-  }
-
-  configure(config: CoinEmitterConfig): void {
-    if (typeof config.maxCoins === 'number') {
-      this.maxCoins = Math.min(config.maxCoins, this.maxCoinsCap);
-      while (this.coins.length > this.maxCoins) {
-        this.removeCoinAt(0);
-      }
-    }
-
-    if (config.spawnIntervalRange) {
-      this.spawnIntervalRange = config.spawnIntervalRange;
-      this.scheduleNextSpawn();
-    }
-  }
-
-  setBounds(bounds: Bounds): void {
-    this.bounds = bounds;
-  }
-
-  update(dt: number): void {
-    this.spawnTimer += dt;
-
-    while (this.coins.length < this.maxCoins && this.spawnTimer >= this.nextSpawnIn) {
-      this.spawnTimer -= this.nextSpawnIn;
-      this.spawnCoin();
-      this.scheduleNextSpawn();
-    }
-
-    const targetY = this.getImpactY();
-    const horizontalLimit = this.bounds.width / 2 + this.coinTexture.width * 2;
-    const fadeThresholdY = this.bounds.height / 2 + this.coinTexture.height * 2;
-
-    for (let index = this.coins.length - 1; index >= 0; index -= 1) {
-      const coin = this.coins[index];
-
-      coin.velocityY += coin.gravity * dt;
-      coin.sprite.x += coin.velocityX * dt;
-      coin.sprite.y += coin.velocityY * dt;
-
-      if (coin.mode === 'flip') {
-        coin.flipTimer += dt * coin.flipSpeed;
-        coin.sprite.scale.x = Math.sin(coin.flipTimer);
-        coin.sprite.scale.y = 1;
-        coin.sprite.rotation = 0;
-      } else {
-        coin.sprite.scale.set(1, 1);
-        coin.sprite.rotation += coin.rotationSpeed * dt;
-      }
-
-      if (coin.state !== 'fading' && coin.velocityY > 0 && coin.sprite.y >= targetY) {
-        coin.sprite.y = targetY;
-        coin.bounces += 1;
-
-        if (coin.bounces <= coin.maxBounces) {
-          const bounceIndex = Math.min(coin.bounces - 1, BOUNCE_DECAY.length - 1);
-          const bounceMultiplier = BOUNCE_DECAY[bounceIndex];
-          coin.velocityY = -coin.baseBounceStrength * bounceMultiplier;
-          coin.velocityX = coin.direction * coin.horizontalSpeed;
-          coin.horizontalSpeed *= randomFloat(0.35, 0.5);
-
-          if (coin.bounces === coin.maxBounces) {
-            coin.pendingFade = true;
-          }
-        } else {
-          coin.pendingFade = true;
-        }
-      }
-
-      if (coin.pendingFade && coin.state !== 'fading' && coin.velocityY >= 0) {
-        coin.state = 'fading';
-        coin.fadeTimer = 0;
-        coin.pendingFade = false;
-      }
-
-      if (coin.state === 'fading') {
-        coin.fadeTimer += dt;
-        const alpha = 1 - coin.fadeTimer / coin.fadeDuration;
-        coin.sprite.alpha = Math.max(0, alpha);
-      } else {
-        coin.sprite.alpha = 1;
-      }
-
-      coin.velocityX *= 0.98;
-
-      const isInvisible = coin.state === 'fading' && coin.fadeTimer >= coin.fadeDuration;
-      const outOfBounds =
-        Math.abs(coin.sprite.x) > horizontalLimit || coin.sprite.y > fadeThresholdY;
-
-      if (isInvisible || outOfBounds) {
-        this.removeCoinAt(index);
-      }
-    }
-  }
-
-  private spawnCoin(): void {
-    if (this.coins.length >= this.maxCoins) {
-      return;
-    }
-
-    const spawnX = this.getSpawnX();
-    let direction: CoinDirection = spawnX >= 0 ? 1 : -1;
-    if (Math.abs(spawnX) < this.coinTexture.width * 0.2) {
-      direction = (Math.random() < 0.5 ? 1 : -1) as CoinDirection;
-    }
-
-    const sprite = new Sprite(this.coinTexture);
-    sprite.anchor.set(0.5);
-    sprite.scale.set(1);
-    sprite.position.set(spawnX, this.getSpawnY());
-    sprite.alpha = 1;
-    sprite.blendMode = 'add';
-
-    const mode: CoinParticle['mode'] = Math.random() < 0.5 ? 'flip' : 'spin';
-    const rotationSpeed = mode === 'spin' ? randomFloat(-6, 6) : 0;
-    sprite.rotation = mode === 'spin' ? randomFloat(-Math.PI, Math.PI) : 0;
-
-    const coin: CoinParticle = {
-      sprite,
-      velocityX: randomFloat(-40, 40) * COIN_X_RANGE_FACTOR,
-      velocityY: randomFloat(20, 80),
-      gravity: randomFloat(900, 1100),
-      horizontalSpeed: randomFloat(220, 320) * COIN_X_RANGE_FACTOR,
-      rotationSpeed,
-      direction,
-      bounces: 0,
-      maxBounces: 3,
-      baseBounceStrength: randomFloat(680, 780),
-      pendingFade: false,
-      state: 'falling',
-      fadeTimer: 0,
-      fadeDuration: randomFloat(0.6, 1.1),
-      flipTimer: randomFloat(0, Math.PI * 2),
-      flipSpeed: mode === 'flip' ? randomFloat(8, 12) : 0,
-      mode,
-    };
-
-    this.coins.push(coin);
-    this.container.addChild(sprite);
-    if (mode === 'flip') {
-      sprite.scale.x = Math.sin(coin.flipTimer);
-      sprite.scale.y = 1;
-    } else {
-      sprite.scale.set(1, 1);
-    }
-  }
-
-  private removeCoinAt(index: number): void {
-    const [coin] = this.coins.splice(index, 1);
-    coin.sprite.destroy();
-  }
-
-  private scheduleNextSpawn(): void {
-    const [min, max] = this.spawnIntervalRange;
-    this.nextSpawnIn = randomFloat(min, max);
-  }
-
-  private getSpawnX(): number {
-    const spread = this.coinTexture.width * 5 * COIN_X_RANGE_FACTOR;
-    return randomFloat(-spread / 2, spread / 2);
-  }
-
-  private getSpawnY(): number {
-    return -this.bounds.height / 2 - this.coinTexture.height;
-  }
-
-  private getImpactY(): number {
-    return this.demonSprite.y - this.demonSprite.height * 0.32;
   }
 }
