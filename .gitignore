@@ -144,3 +144,6 @@ chrome-debug-profile
 
 # Turborepo
 .turbo
+
+# pnpm local store (should not be committed)
+.pnpm-store/
