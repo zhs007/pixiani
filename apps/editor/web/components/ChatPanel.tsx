@@ -98,8 +98,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                   msg.variant === 'error'
                     ? '1px solid #ff4d4f'
                     : msg.variant === 'suggestion'
-                    ? '1px solid #f0c040'
-                    : '1px solid transparent',
+                      ? '1px solid #f0c040'
+                      : '1px solid transparent',
                 fontFamily: 'system-ui, sans-serif',
                 fontSize: '14px',
               }}

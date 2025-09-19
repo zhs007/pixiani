@@ -9,10 +9,10 @@ The goal of this task was to modify the chat input in the editor application to 
 1.  **Removed Enter Key Submission:** The `onKeyDown` event handler was removed from the `<textarea>` element to prevent the Enter key from submitting the form. Messages can now only be sent by clicking the "Send" button.
 
 2.  **Dynamic Textarea Height:**
-    *   The `<textarea>` was converted to a controlled component with its height managed by React state.
-    *   An `useEffect` hook was added to automatically adjust the height of the textarea based on its `scrollHeight` as the user types.
-    *   The textarea now starts with a height of a single line and can grow up to a maximum height of 200px.
-    *   The `resize` style was set to `none` to disable manual resizing.
+    - The `<textarea>` was converted to a controlled component with its height managed by React state.
+    - An `useEffect` hook was added to automatically adjust the height of the textarea based on its `scrollHeight` as the user types.
+    - The textarea now starts with a height of a single line and can grow up to a maximum height of 200px.
+    - The `resize` style was set to `none` to disable manual resizing.
 
 3.  **Height Reset on Send:** The height of the textarea automatically resets to its initial single-line height when a message is sent. This is achieved because the `inputText` is cleared, which triggers the `useEffect` to recalculate the height.
 
@@ -23,9 +23,10 @@ The main challenge was a build failure caused by a syntax error. When converting
 ## Verification
 
 All verification steps were completed successfully:
-*   `pnpm install`
-*   `pnpm build`
-*   `pnpm test`
-*   The development server was started with `pnpm dev:editor`.
+
+- `pnpm install`
+- `pnpm build`
+- `pnpm test`
+- The development server was started with `pnpm dev:editor`.
 
 The application is confirmed to be in a working state.
