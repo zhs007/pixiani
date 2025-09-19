@@ -382,7 +382,7 @@ export class ComplexStage {
       const total = tokens.length;
       const letters: Text[] = [];
       tokens.forEach((char, index) => {
-  const gradient = new FillGradient(0, -radius, 0, radius);
+        const gradient = new FillGradient(0, -radius, 0, radius);
         gradient.addColorStop(0, 0xfff9c7);
         gradient.addColorStop(0.65, 0xffd27a);
         gradient.addColorStop(1, 0xffa51f);
@@ -894,7 +894,7 @@ class BannerAnimator {
   }
 
   private resolveConfig(phase: PhaseWithBanner): RequiredBannerConfig {
-  const overrides = (this.configs[phase] ?? {}) as Partial<BannerPhaseConfig>;
+    const overrides = (this.configs[phase] ?? {}) as Partial<BannerPhaseConfig>;
     return {
       ...BannerAnimator.DEFAULT_CONFIG,
       ...overrides,
