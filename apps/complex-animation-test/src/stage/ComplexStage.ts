@@ -10,10 +10,7 @@ import {
   Ticker,
 } from 'pixi.js';
 import { CoinEmitter } from '../animations/CoinEmitter';
-import {
-  IconBurstEmitter,
-  type IconBurstEmitterConfig,
-} from '../animations/IconBurstEmitter';
+import { IconBurstEmitter, type IconBurstEmitterConfig } from '../animations/IconBurstEmitter';
 import { randomFloat } from '../utils/random';
 
 export interface ComplexStageOptions {

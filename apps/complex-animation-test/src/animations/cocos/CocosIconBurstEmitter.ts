@@ -54,7 +54,8 @@ interface IconParticle {
 
 const randomRange = (min: number, max: number): number => min + Math.random() * (max - min);
 
-const randomChoice = <T>(values: readonly T[]): T => values[Math.floor(Math.random() * values.length)];
+const randomChoice = <T>(values: readonly T[]): T =>
+  values[Math.floor(Math.random() * values.length)];
 
 const hexToColor = (value: number): Color => {
   const color = new Color();
@@ -162,7 +163,10 @@ export class CocosIconBurstEmitter {
         const scale = startScale + (peakScale - startScale) * t;
         particle.node.setScale(scale, scale, 1);
       } else {
-        const progress = Math.min((life - peakTime) / Math.max(totalLife - peakTime, Number.EPSILON), 1);
+        const progress = Math.min(
+          (life - peakTime) / Math.max(totalLife - peakTime, Number.EPSILON),
+          1,
+        );
         const scale = peakScale + (finalScale - peakScale) * progress;
         particle.node.setScale(scale, scale, 1);
         particle.opacity.opacity = Math.floor((1 - progress) * 255);

@@ -64,8 +64,7 @@ interface CoinParticle {
 
 const randomRange = (min: number, max: number): number => min + Math.random() * (max - min);
 
-const randomRangeInt = (min: number, max: number): number =>
-  Math.floor(randomRange(min, max + 1));
+const randomRangeInt = (min: number, max: number): number => Math.floor(randomRange(min, max + 1));
 
 const randomChoice = <T>(values: readonly T[]): T => values[randomRangeInt(0, values.length - 1)];
 
@@ -199,8 +198,7 @@ export class CocosCoinEmitter {
       coin.velocityX *= 0.98;
 
       const isInvisible = coin.state === 'fading' && coin.fadeTimer >= coin.fadeDuration;
-      const outOfBounds =
-        Math.abs(position.x) > horizontalLimit || position.y > fadeThresholdY;
+      const outOfBounds = Math.abs(position.x) > horizontalLimit || position.y > fadeThresholdY;
 
       if (isInvisible || outOfBounds) {
         this.removeCoinAt(index);
