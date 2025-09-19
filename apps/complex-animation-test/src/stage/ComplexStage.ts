@@ -376,7 +376,9 @@ export class ComplexStage {
       innerGlow.stroke({ width: 6, color: 0xffd873, alpha: 0.35 });
       container.addChild(innerGlow);
 
-      const repeatedLabel = Array.from({ length: repetitions }, () => label.toUpperCase()).join(' ');
+      const repeatedLabel = Array.from({ length: repetitions }, () => label.toUpperCase()).join(
+        ' ',
+      );
       const tokens = repeatedLabel.split('');
       const total = tokens.length;
       const letters: Text[] = [];
@@ -578,8 +580,9 @@ export class ComplexStage {
     this.updateAmount(deltaSeconds);
 
     if (this.debugOverlay) {
-      this.debugOverlay.textContent = `phase: ${this.currentPhase}\namount: ${this.currentAmount
-        .toFixed(2)}\nfps: ${this.app.ticker.FPS.toFixed(1)}`;
+      this.debugOverlay.textContent = `phase: ${this.currentPhase}\namount: ${this.currentAmount.toFixed(
+        2,
+      )}\nfps: ${this.app.ticker.FPS.toFixed(1)}`;
     }
 
     this.bannerAnimator?.update(deltaSeconds);
@@ -787,10 +790,13 @@ class BannerAnimator {
   constructor({ visuals, configs }: BannerAnimatorOptions) {
     this.visuals = visuals;
     this.configs = configs;
-    this.orderLookup = PHASE_ORDER.reduce<Record<StagePhase, number>>((lookup, phase, index) => {
-      lookup[phase] = index;
-      return lookup;
-    }, {} as Record<StagePhase, number>);
+    this.orderLookup = PHASE_ORDER.reduce<Record<StagePhase, number>>(
+      (lookup, phase, index) => {
+        lookup[phase] = index;
+        return lookup;
+      },
+      {} as Record<StagePhase, number>,
+    );
 
     this.states = {} as Partial<Record<PhaseWithBanner, BannerState>>;
 
@@ -895,8 +901,7 @@ class BannerAnimator {
       ...overrides,
       frontFadeDuration:
         overrides.frontFadeDuration ?? BannerAnimator.DEFAULT_CONFIG.frontFadeDuration,
-      frontFadeScale:
-        overrides.frontFadeScale ?? BannerAnimator.DEFAULT_CONFIG.frontFadeScale,
+      frontFadeScale: overrides.frontFadeScale ?? BannerAnimator.DEFAULT_CONFIG.frontFadeScale,
       fadeOutSpinSpeed:
         overrides.fadeOutSpinSpeed ?? BannerAnimator.DEFAULT_CONFIG.fadeOutSpinSpeed,
     };
@@ -1088,7 +1093,8 @@ class BannerAnimator {
       case 'fade': {
         state.frontTimer += dt;
         const progress = Math.min(state.frontTimer / config.frontFadeDuration, 1);
-        const scale = state.fadeStartScale + (config.frontFadeScale - state.fadeStartScale) * progress;
+        const scale =
+          state.fadeStartScale + (config.frontFadeScale - state.fadeStartScale) * progress;
         front.scale.set(scale);
         front.rotation += config.fadeOutSpinSpeed * dt;
         front.alpha = Math.max(0, 1 - progress);
@@ -1223,8 +1229,8 @@ class RippleEmitter {
 
       const progress = Math.min(ripple.elapsed / ripple.duration, 1);
       const radius = ripple.startRadius + (ripple.endRadius - ripple.startRadius) * progress;
-      const lineWidth = ripple.startLineWidth +
-        (ripple.endLineWidth - ripple.startLineWidth) * progress;
+      const lineWidth =
+        ripple.startLineWidth + (ripple.endLineWidth - ripple.startLineWidth) * progress;
       const alpha = RIPPLE_ALPHA_START + (RIPPLE_ALPHA_END - RIPPLE_ALPHA_START) * progress;
 
       ripple.graphic.clear();
@@ -1395,7 +1401,10 @@ class IconBurstEmitter {
         const scale = startScale + (peakScale - startScale) * t;
         particle.sprite.scale.set(scale);
       } else {
-        const postLife = Math.min((life - peakTime) / Math.max(totalLife - peakTime, Number.EPSILON), 1);
+        const postLife = Math.min(
+          (life - peakTime) / Math.max(totalLife - peakTime, Number.EPSILON),
+          1,
+        );
         const scale = peakScale + (finalScale - peakScale) * postLife;
         particle.sprite.scale.set(scale);
         particle.sprite.alpha = Math.max(0, 1 - postLife);
@@ -1442,7 +1451,8 @@ class IconBurstEmitter {
       sprite.scale.set(startScale);
       sprite.blendMode = 'add';
       sprite.alpha = 1;
-      sprite.tint = this.colorPalette[Math.floor(Math.random() * this.colorPalette.length)] ?? 0xffffff;
+      sprite.tint =
+        this.colorPalette[Math.floor(Math.random() * this.colorPalette.length)] ?? 0xffffff;
 
       const rotationSpeed = randomFloat(spinSpeedRange[0], spinSpeedRange[1]);
 
@@ -1599,7 +1609,8 @@ class CoinEmitter {
       coin.velocityX *= 0.98;
 
       const isInvisible = coin.state === 'fading' && coin.fadeTimer >= coin.fadeDuration;
-      const outOfBounds = Math.abs(coin.sprite.x) > horizontalLimit || coin.sprite.y > fadeThresholdY;
+      const outOfBounds =
+        Math.abs(coin.sprite.x) > horizontalLimit || coin.sprite.y > fadeThresholdY;
 
       if (isInvisible || outOfBounds) {
         this.removeCoinAt(index);
