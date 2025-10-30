@@ -62,38 +62,65 @@ async function bootstrap(): Promise<void> {
   gsap.to(background, { alpha: 1, duration: 1.2, ease: 'power2.out' });
 
   const arrowTextures = await Promise.all(arrowAssetUrls.map((url) => Assets.load<Texture>(url)));
-  const arrowsPerBurst = 8;
-  const travelDuration = 7.2;
-  const fadeDelay = 2.4;
-  const fadeDuration = 4.0;
+  const blueArrowIndices = new Set([3, 4]);
+  const arrowsPerBurst = 20;
+  const blackArrowDuration = 14.4;
+  const blueArrowDuration = blackArrowDuration * 0.5;
+  const appearRatio = 0.08;
+  const fadeStartRatio = 0.75;
+  const fadeDurationRatio = 0.25;
 
   const coinTextures = await Promise.all(coinAssetUrls.map((url) => Assets.load<Texture>(url)));
+  const coinMinAlpha = 0.5;
+  const coinMaxAlpha = 1;
   const coins: {
     sprite: AnimatedSprite;
-    velocity: { x: number; y: number };
+    initialPosition: { x: number; y: number };
+    initialVelocity: { x: number; y: number };
     angularVelocity: number;
+    elapsed: number;
+    timeToApex: number;
+    baseScale: number;
+    boostMultiplier: number;
+    rotationAccumulated: number;
   }[] = [];
   const spawnIntervalSeconds = 0.07;
   const gravity = 1800;
   const cleanupMargin = 120;
   const launchAngles = {
-    left: degreesToRadians(120),
-    right: degreesToRadians(60),
+    left: degreesToRadians(105),
+    right: degreesToRadians(75),
+    centerRight: degreesToRadians(88),
   } as const;
-  const angleVariance = degreesToRadians(10);
+  const launchVariances = {
+    left: degreesToRadians(6),
+    right: degreesToRadians(6),
+    centerRight: degreesToRadians(3),
+  } as const;
   let spawnTimer = 0;
+  let spawnCenterRightAlternate = false;
 
-  const spawnCoin = (side: keyof typeof launchAngles): void => {
+  const spawnCoin = (side: keyof typeof launchAngles, originOffsetX = 0): void => {
     const coin = new AnimatedSprite(coinTextures);
     const speed = randomBetween(580, 780) * 1.5;
-    const angle = launchAngles[side] + randomBetween(-angleVariance, angleVariance);
-    const scale = randomBetween(0.85, 1.1) * 0.5;
+    const angle = launchAngles[side] + randomBetween(-launchVariances[side], launchVariances[side]);
+    const baseScale = randomBetween(0.85, 1.1) * 0.5;
+    const boostMultiplier = Math.random() < 0.35 ? 1.5 : 1;
+    const initialVelocityX = Math.cos(angle) * speed;
+    const initialVelocityY = -Math.sin(angle) * speed;
+    const timeToApex = initialVelocityY < 0 ? -initialVelocityY / gravity : 0;
+    const initialPosition = {
+      x: app.screen.width / 2 + originOffsetX,
+      y: app.screen.height / 2,
+    };
+    const angularVelocity = randomBetween(-Math.PI, Math.PI);
 
     coin.anchor.set(0.5);
-    coin.position.set(app.screen.width / 2, app.screen.height / 2);
+    coin.position.set(initialPosition.x, initialPosition.y);
     coin.rotation = randomBetween(-Math.PI, Math.PI);
-    coin.animationSpeed = randomBetween(0.6, 0.95);
-    coin.scale.set(scale);
+    coin.animationSpeed = randomBetween(0.15, 0.2375);
+    coin.scale.set(baseScale);
+    coin.alpha = coinMinAlpha;
     coin.loop = true;
     coin.play();
 
@@ -101,11 +128,17 @@ async function bootstrap(): Promise<void> {
 
     coins.push({
       sprite: coin,
-      velocity: {
-        x: Math.cos(angle) * speed,
-        y: -Math.sin(angle) * speed,
+      initialPosition,
+      initialVelocity: {
+        x: initialVelocityX,
+        y: initialVelocityY,
       },
-      angularVelocity: randomBetween(-Math.PI, Math.PI),
+      angularVelocity,
+      elapsed: 0,
+      timeToApex,
+      baseScale,
+      boostMultiplier,
+      rotationAccumulated: 0,
     });
   };
 
@@ -116,16 +149,39 @@ async function bootstrap(): Promise<void> {
       spawnTimer -= spawnIntervalSeconds;
       spawnCoin('left');
       spawnCoin('right');
+      if (spawnCenterRightAlternate) {
+        const extraOffsetX = Math.min(app.screen.width, app.screen.height) * 0.04;
+        spawnCoin('centerRight', extraOffsetX);
+      }
+      spawnCenterRightAlternate = !spawnCenterRightAlternate;
     }
 
     for (let index = coins.length - 1; index >= 0; index -= 1) {
       const coin = coins[index];
       const sprite = coin.sprite;
 
-      coin.velocity.y += gravity * deltaSeconds;
-      sprite.x += coin.velocity.x * deltaSeconds;
-      sprite.y += coin.velocity.y * deltaSeconds;
+      coin.elapsed += deltaSeconds;
+      const currentTime = coin.elapsed;
+      const currentVelocityY = coin.initialVelocity.y + gravity * currentTime;
+
+      if (currentVelocityY < 0 && coin.timeToApex > 0) {
+        const progress = Math.min(currentTime / coin.timeToApex, 1);
+        sprite.alpha = coinMinAlpha + (coinMaxAlpha - coinMinAlpha) * progress;
+      } else {
+        sprite.alpha = coinMaxAlpha;
+      }
+
+      sprite.x = coin.initialPosition.x + coin.initialVelocity.x * currentTime;
+      sprite.y = coin.initialPosition.y + coin.initialVelocity.y * currentTime + 0.5 * gravity * currentTime * currentTime;
       sprite.rotation += coin.angularVelocity * deltaSeconds;
+      coin.rotationAccumulated += Math.abs(coin.angularVelocity) * deltaSeconds;
+
+      const scaleMultiplier =
+        coin.boostMultiplier > 1
+          ? 1 + (coin.boostMultiplier - 1) * Math.min(coin.rotationAccumulated / (Math.PI * 2), 1)
+          : 1;
+
+      sprite.scale.set(coin.baseScale * scaleMultiplier);
 
       const { width, height } = app.screen;
       const isOutOfBounds =
@@ -150,11 +206,13 @@ async function bootstrap(): Promise<void> {
     const travelDistance = Math.max(width, height) * 0.75;
 
     const baseSpacing = (Math.PI * 2) / arrowsPerBurst;
+    const textureOffset = Math.floor(Math.random() * arrowTextures.length);
 
     for (let index = 0; index < arrowsPerBurst; index += 1) {
-      const arrow = new Sprite(arrowTextures[Math.floor(Math.random() * arrowTextures.length)]);
-      const jitter = (Math.random() - 0.5) * baseSpacing * 0.6;
-      const angle = baseAngle + index * baseSpacing + jitter;
+      const textureIndex = (textureOffset + index) % arrowTextures.length;
+      const arrowTexture = arrowTextures[textureIndex];
+      const arrow = new Sprite(arrowTexture);
+      const angle = baseAngle + index * baseSpacing;
       const targetX = originX + Math.cos(angle) * travelDistance;
       const targetY = originY + Math.sin(angle) * travelDistance;
 
@@ -172,6 +230,12 @@ async function bootstrap(): Promise<void> {
         },
       });
 
+      const isBlue = blueArrowIndices.has(textureIndex);
+      const travelDuration = isBlue ? blueArrowDuration : blackArrowDuration;
+      const fadeDelay = travelDuration * fadeStartRatio;
+      const fadeDuration = travelDuration * fadeDurationRatio;
+      const appearTime = travelDuration * appearRatio;
+
       timeline.to(
         arrow,
         {
@@ -183,15 +247,7 @@ async function bootstrap(): Promise<void> {
         0,
       );
 
-      timeline.to(
-        arrow,
-        {
-          alpha: 1,
-          duration: 0.2,
-          ease: 'sine.in',
-        },
-        0.18,
-      );
+      timeline.set(arrow, { alpha: 1 }, appearTime);
 
       timeline.to(
         arrow,
@@ -211,11 +267,11 @@ async function bootstrap(): Promise<void> {
 
   const burstTimeline = gsap.timeline({
     repeat: -1,
-    repeatDelay: 0.8,
+    repeatDelay: 0.3,
     delay: 0.6,
   });
 
-  burstTimeline.call(emitArrows).call(emitArrows, undefined, '+=0.18').call(emitArrows, undefined, '+=0.18');
+  burstTimeline.call(emitArrows);
 
   const handleResize = (): void => {
     const nextWidth = Math.max(window.innerWidth, 720);
