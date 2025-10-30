@@ -6,8 +6,8 @@ const backgroundAssetUrl = new URL('../../../assets/winani002/background.png', i
 const arrowAssetUrls = Array.from({ length: 5 }, (_, index) =>
   new URL(`../../../assets/winani002/arrow${String(index + 1).padStart(3, '0')}.png`, import.meta.url).href,
 );
-const coinAssetUrls = Array.from({ length: 8 }, (_, index) =>
-  new URL(`../../../assets/winani002/coin${String(index + 1).padStart(3, '0')}.png`, import.meta.url).href,
+const coinAssetUrls = Array.from({ length: 6 }, (_, index) =>
+  new URL(`../../../assets/winani002/${String(index + 1).padStart(2, '0')}.png`, import.meta.url).href,
 );
 
 const degreesToRadians = (degrees: number): number => (degrees * Math.PI) / 180;
@@ -119,7 +119,7 @@ async function bootstrap(): Promise<void> {
     coin.anchor.set(0.5);
     coin.position.set(initialPosition.x, initialPosition.y);
     coin.rotation = randomBetween(-Math.PI, Math.PI);
-    coin.animationSpeed = randomBetween(0.15, 0.2375);
+    coin.animationSpeed = randomBetween(0.15, 0.2375) * 1.3;
     coin.scale.set(baseScale);
     coin.alpha = coinMinAlpha;
     coin.loop = true;
