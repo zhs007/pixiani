@@ -99,6 +99,7 @@ async function bootstrap(): Promise<void> {
   } as const;
   let spawnTimer = 0;
   let spawnCenterRightAlternate = false;
+  let coinSpawningEnabled = true;
 
   const spawnCoin = (side: keyof typeof launchAngles, originOffsetX = 0): void => {
     const coin = new AnimatedSprite(coinTextures);
@@ -147,6 +148,10 @@ async function bootstrap(): Promise<void> {
 
     while (spawnTimer >= spawnIntervalSeconds) {
       spawnTimer -= spawnIntervalSeconds;
+      if (!coinSpawningEnabled) {
+        continue;
+      }
+
       spawnCoin('left');
       spawnCoin('right');
       if (spawnCenterRightAlternate) {
@@ -284,6 +289,15 @@ async function bootstrap(): Promise<void> {
   };
 
   window.addEventListener('resize', handleResize, { passive: true });
+  window.addEventListener(
+    'keydown',
+    (event) => {
+      if (event.key.toLowerCase() === 's') {
+        coinSpawningEnabled = false;
+      }
+    },
+    { passive: true },
+  );
   handleResize();
 }
 
